@@ -1,0 +1,41 @@
+domain: e2enetworks.com
+layout:
+- go.kubebuilder.io/v4
+projectName: cluster-api-provider-e2e
+repo: github.com/e2enetworks/cluster-api-provider-e2e
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: e2enetworks.com
+  group: infrastructure
+  kind: E2ECluster
+  path: github.com/e2enetworks/cluster-api-provider-e2e/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: e2enetworks.com
+  group: infrastructure
+  kind: E2EMachine
+  path: github.com/e2enetworks/cluster-api-provider-e2e/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: e2enetworks.com
+  group: infrastructure
+  kind: E2EClusterTemplate
+  path: github.com/e2enetworks/cluster-api-provider-e2e/api/v1beta1
+  version: v1beta1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: e2enetworks.com
+  group: infrastructure
+  kind: E2EMachineTemplate
+  path: github.com/e2enetworks/cluster-api-provider-e2e/api/v1beta1
+  version: v1beta1
+version: "3"

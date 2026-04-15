@@ -1,0 +1,5 @@
+resources:
+  - bases/infrastructure.e2enetworks.com_e2eclusters.yaml
+  - bases/infrastructure.e2enetworks.com_e2emachines.yaml
+  - bases/infrastructure.e2enetworks.com_e2eclustertemplates.yaml
+  - bases/infrastructure.e2enetworks.com_e2emachinetemplates.yaml

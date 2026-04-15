@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: cape2e-system
+  labels:
+    control-plane: controller-manager
+    cluster.x-k8s.io/provider: infrastructure-e2e
+spec:
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+        cluster.x-k8s.io/provider: infrastructure-e2e
+    spec:
+      serviceAccountName: controller-manager
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: manager
+          image: e2enetworks/cluster-api-provider-e2e:latest
+          command:
+            - /manager
+          args:
+            - --leader-elect
+          env:
+            - name: E2E_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: e2e-credentials
+                  key: api-key
+            - name: E2E_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: e2e-credentials
+                  key: auth-token
+            - name: E2E_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: e2e-credentials
+                  key: project-id
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 128Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault

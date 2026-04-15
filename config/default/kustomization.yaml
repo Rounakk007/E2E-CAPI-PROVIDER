@@ -1,0 +1,9 @@
+namespace: cape2e-system
+
+namePrefix: cape2e-
+
+resources:
+  - ../crd
+  - ../rbac
+  - ../manager
+  - namespace.yaml

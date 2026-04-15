@@ -1,0 +1,66 @@
+---
+# kOrdent ProviderTemplate for E2E Networks infrastructure provider
+# Deploy this to the kcm-system namespace to make the provider available
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ProviderTemplate
+metadata:
+  name: cluster-api-provider-e2e-0-1-0
+  namespace: kcm-system
+spec:
+  providers:
+    - infrastructure-e2e
+  capiContracts:
+    v1beta1: v1beta1
+  helm:
+    chartSpec:
+      chart: cluster-api-provider-e2e
+      version: 0.1.0
+      interval: 10m0s
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: kcm-templates
+---
+# kOrdent ClusterTemplate for E2E Networks standalone clusters
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ClusterTemplate
+metadata:
+  name: e2e-standalone-0-1-0
+  namespace: kcm-system
+spec:
+  k8sVersion: "1.30.0"
+  providers:
+    - bootstrap-k0sproject-k0smotron
+    - control-plane-k0sproject-k0smotron
+    - infrastructure-e2e
+  providerContracts:
+    bootstrap-k0sproject-k0smotron: v1beta1
+    control-plane-k0sproject-k0smotron: v1beta1
+    infrastructure-e2e: v1beta1
+  helm:
+    chartSpec:
+      chart: e2e-standalone-cp
+      version: 0.1.0
+      interval: 10m0s
+      sourceRef:
+        kind: HelmRepository
+        name: kcm-templates
+---
+# Example kOrdent ClusterDeployment using the E2E provider
+# apiVersion: k0rdent.mirantis.com/v1beta1
+# kind: ClusterDeployment
+# metadata:
+#   name: my-e2e-cluster
+#   namespace: my-project
+# spec:
+#   template: e2e-standalone-0-1-0
+#   credential: e2e-credential
+#   config:
+#     clusterLabels: {}
+#     region: ncr
+#     controlPlane:
+#       plan: C3.8GB
+#       image: Ubuntu-22.04
+#     worker:
+#       plan: C2-12GB
+#       image: Ubuntu-22.04
