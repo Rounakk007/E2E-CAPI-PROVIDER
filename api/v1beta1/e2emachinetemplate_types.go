@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 // E2EMachineTemplateSpec defines the desired state of E2EMachineTemplate.
@@ -28,8 +29,8 @@ type E2EMachineTemplateSpec struct {
 // E2EMachineTemplateResource defines the template structure.
 type E2EMachineTemplateResource struct {
 	// +optional
-	ObjectMeta clusterv1ObjectMeta `json:"metadata,omitempty"`
-	Spec       E2EMachineSpec     `json:"spec"`
+	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty"`
+	Spec       E2EMachineSpec       `json:"spec"`
 }
 
 // +kubebuilder:object:root=true
