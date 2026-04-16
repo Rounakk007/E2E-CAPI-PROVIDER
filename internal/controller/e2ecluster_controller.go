@@ -29,8 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -181,9 +179,11 @@ func (r *E2EClusterReconciler) reconcileNormal(ctx context.Context, e2eCluster *
 func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eCluster *infrav1.E2ECluster) error {
 	logger := log.FromContext(ctx)
 
+	location := e2eCluster.Spec.Location
+
 	// If an LB already exists, check its status
 	if e2eCluster.Status.Network.LoadBalancerID != 0 {
-		lb, err := r.E2EClient.GetLoadBalancer(ctx, e2eCluster.Status.Network.LoadBalancerID)
+		lb, err := r.E2EClient.GetLoadBalancer(ctx, e2eCluster.Status.Network.LoadBalancerID, location)
 		if err != nil {
 			if errors.Is(err, cloud.ErrNodeNotFound) || errors.Is(err, cloud.ErrLoadBalancerNotFound) {
 				// LB was deleted externally, reset and recreate
@@ -194,7 +194,7 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 				return err
 			}
 		} else {
-			e2eCluster.Status.Network.APIServerIP = lb.IPAddress
+			e2eCluster.Status.Network.APIServerIP = lb.HostTarget
 			return nil
 		}
 	}
@@ -207,35 +207,43 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 
 	logger.Info("Creating API server load balancer", "name", lbName)
 
+	apiServerPortStr := fmt.Sprintf("%d", apiServerPort)
 	lb, err := r.E2EClient.CreateLoadBalancer(ctx, cloud.CreateLoadBalancerRequest{
-		Name:   lbName,
-		Region: e2eCluster.Spec.Region,
-		VPCID:  e2eCluster.Spec.Network.VPCID,
-		Listeners: []cloud.Listener{
+		LBName:               lbName,
+		LBType:               "external",
+		LBMode:               "HTTP",
+		LBPort:               apiServerPortStr,
+		PlanName:             "E2E-LB-2",
+		NodeListType:         "D",
+		ClientTimeout:        "60",
+		ConnectionTimeout:    "60",
+		ServerTimeout:        "60",
+		HTTPKeepAliveTimeout: "60",
+		SSLContext:           cloud.SSLContext{RedirectToHTTPS: false},
+		Backends:             []interface{}{},
+		VPCList:              []interface{}{},
+		ACLList:              []interface{}{},
+		ACLMap:               []interface{}{},
+		TCPBackend: []cloud.TCPBackend{
 			{
-				Protocol:   "TCP",
-				Port:       apiServerPort,
-				TargetPort: apiServerPort,
+				Target:      "tcpNetworkMappingNode",
+				BackendName: "apiserver-backend",
+				Port:        apiServerPort,
+				Balance:     "roundrobin",
+				Servers:     []cloud.TCPBackendServer{},
 			},
 		},
-		HealthCheck: &cloud.HealthCheck{
-			Protocol:           "TCP",
-			Port:               apiServerPort,
-			CheckInterval:      10,
-			ResponseTimeout:    5,
-			UnhealthyThreshold: 3,
-			HealthyThreshold:   2,
-		},
+		SecurityGroupID: e2eCluster.Spec.LoadBalancer.SecurityGroupID,
+		Location:        location,
 	})
 	if err != nil {
 		return fmt.Errorf("creating load balancer: %w", err)
 	}
 
 	e2eCluster.Status.Network.LoadBalancerID = lb.ID
-	e2eCluster.Status.Network.APIServerIP = lb.IPAddress
-	e2eCluster.Status.Network.VPCID = lb.VPCID
+	e2eCluster.Status.Network.APIServerIP = lb.HostTarget
 
-	logger.Info("Load balancer created", "id", lb.ID, "ip", lb.IPAddress)
+	logger.Info("Load balancer created", "id", lb.ID, "ip", lb.HostTarget)
 	return nil
 }
 
@@ -247,7 +255,7 @@ func (r *E2EClusterReconciler) reconcileDelete(ctx context.Context, e2eCluster *
 	// Delete the load balancer if it exists
 	if e2eCluster.Status.Network.LoadBalancerID != 0 {
 		logger.Info("Deleting API server load balancer", "id", e2eCluster.Status.Network.LoadBalancerID)
-		if err := r.E2EClient.DeleteLoadBalancer(ctx, e2eCluster.Status.Network.LoadBalancerID); err != nil {
+		if err := r.E2EClient.DeleteLoadBalancer(ctx, e2eCluster.Status.Network.LoadBalancerID, e2eCluster.Spec.Location); err != nil {
 			if !errors.Is(err, cloud.ErrLoadBalancerNotFound) && !errors.Is(err, cloud.ErrNodeNotFound) {
 				conditions.MarkFalse(
 					e2eCluster,

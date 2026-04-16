@@ -44,10 +44,14 @@ type E2EMachineSpec struct {
 	// +optional
 	Region string `json:"region,omitempty"`
 
-	// SSHKeyName is the name of the SSH key to inject into this node.
-	// If empty, defaults to the cluster's SSH key.
+	// Location is the E2E Cloud location name (e.g. "Delhi", "Chennai").
+	// Passed as a query parameter for node creation.
 	// +optional
-	SSHKeyName string `json:"sshKeyName,omitempty"`
+	Location string `json:"location,omitempty"`
+
+	// SSHKeys is the list of SSH public key strings to inject into this node.
+	// +optional
+	SSHKeys []string `json:"sshKeys,omitempty"`
 
 	// VPCID is the VPC to place this node in.
 	// If empty, defaults to the cluster's VPC.

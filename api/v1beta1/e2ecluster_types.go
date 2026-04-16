@@ -31,6 +31,11 @@ type E2EClusterSpec struct {
 	// Region is the E2E Cloud region for this cluster (e.g. "ncr", "chennai").
 	Region string `json:"region"`
 
+	// Location is the E2E Cloud location name (e.g. "Delhi", "Chennai").
+	// Required for API calls as a query parameter.
+	// +optional
+	Location string `json:"location,omitempty"`
+
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	// +optional
 	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
@@ -42,10 +47,6 @@ type E2EClusterSpec struct {
 	// LoadBalancer contains load balancer configuration for the API server.
 	// +optional
 	LoadBalancer E2ELoadBalancer `json:"loadBalancer,omitempty"`
-
-	// SSHKeyName is the name of the SSH key to inject into nodes.
-	// +optional
-	SSHKeyName string `json:"sshKeyName,omitempty"`
 }
 
 // E2EClusterStatus defines the observed state of E2ECluster.

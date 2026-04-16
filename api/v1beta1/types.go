@@ -38,4 +38,8 @@ type E2ELoadBalancer struct {
 	// Name is a custom name for the load balancer.
 	// +optional
 	Name string `json:"name,omitempty"`
+
+	// SecurityGroupID is the security group to assign to the load balancer.
+	// +optional
+	SecurityGroupID int `json:"securityGroupID,omitempty"`
 }

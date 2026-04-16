@@ -65,7 +65,7 @@ func NewClient(cfg ClientConfig) *Client {
 }
 
 // doRequest executes an HTTP request against the E2E API.
-func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}, extraQueryParams ...map[string]string) ([]byte, error) {
 	url := fmt.Sprintf("%s%s", c.baseURL, path)
 
 	var reqBody io.Reader
@@ -90,6 +90,11 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	q := req.URL.Query()
 	q.Set("apikey", c.apiKey)
 	q.Set("project_id", c.projectID)
+	if len(extraQueryParams) > 0 {
+		for k, v := range extraQueryParams[0] {
+			q.Set(k, v)
+		}
+	}
 	req.URL.RawQuery = q.Encode()
 
 	resp, err := c.httpClient.Do(req)

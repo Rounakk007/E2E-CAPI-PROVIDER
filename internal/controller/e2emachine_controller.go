@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +34,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -215,16 +215,24 @@ func (r *E2EMachineReconciler) createInstance(
 		region = e2eCluster.Spec.Region
 	}
 
-	// Resolve VPC
-	vpcID := e2eMachine.Spec.VPCID
-	if vpcID == "" {
-		vpcID = e2eCluster.Spec.Network.VPCID
+	// Resolve VPC — the API expects vpc_id as an integer
+	vpcIDStr := e2eMachine.Spec.VPCID
+	if vpcIDStr == "" {
+		vpcIDStr = e2eCluster.Spec.Network.VPCID
+	}
+	var vpcID int
+	if vpcIDStr != "" {
+		vpcID, _ = strconv.Atoi(vpcIDStr)
 	}
 
 	// Get bootstrap data
+	startScripts := []string{}
 	startScript, err := r.getBootstrapData(ctx, machine)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("getting bootstrap data: %w", err)
+	}
+	if startScript != "" {
+		startScripts = append(startScripts, startScript)
 	}
 
 	// Determine public IP setting
@@ -253,20 +261,30 @@ func (r *E2EMachineReconciler) createInstance(
 		"Creating E2E compute node",
 	)
 
+	// When VPC is set, subnet_id should be null; otherwise empty string
+	var subnetID *string
+	if vpcID == 0 {
+		empty := ""
+		subnetID = &empty
+	}
+
 	node, err := r.E2EClient.CreateNode(ctx, cloud.CreateNodeRequest{
 		Name:              e2eMachine.Name,
 		Plan:              e2eMachine.Spec.Plan,
 		Image:             e2eMachine.Spec.Image,
 		Region:            region,
+		Location:          e2eMachine.Spec.Location,
 		Label:             e2eMachine.Namespace,
+		SSHKeys:           e2eMachine.Spec.SSHKeys,
+		StartScripts:      startScripts,
 		DisablePassword:   true,
 		NumberOfInstances: 1,
 		DefaultPublicIP:   defaultPublicIP,
 		IsIPv6Availed:     e2eMachine.Spec.EnableIPv6,
 		Backups:           e2eMachine.Spec.EnableBackup,
 		VPCID:             vpcID,
+		SubnetID:          subnetID,
 		SecurityGroupID:   securityGroupID,
-		StartScript:       startScript,
 	})
 	if err != nil {
 		conditions.MarkFalse(
@@ -297,7 +315,7 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 	logger := log.FromContext(ctx)
 	nodeID := *e2eMachine.Status.InstanceID
 
-	node, err := r.E2EClient.GetNode(ctx, nodeID)
+	node, err := r.E2EClient.GetNode(ctx, nodeID, e2eMachine.Spec.Location)
 	if err != nil {
 		if errors.Is(err, cloud.ErrNodeNotFound) {
 			logger.Info("E2E node not found, instance may have been deleted externally", "nodeID", nodeID)
@@ -366,12 +384,17 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 
 		// Register with the load balancer if this is a control plane node
 		if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
-			if e2eCluster.Status.Network.LoadBalancerID != 0 {
-				if err := r.E2EClient.AddBackendNode(
+			if e2eCluster.Status.Network.LoadBalancerID != 0 && node.PrivateIPAddress != "" {
+				if err := r.E2EClient.AddBackendServer(
 					ctx,
 					e2eCluster.Status.Network.LoadBalancerID,
-					node.ID,
-					apiServerPort,
+					cloud.TCPBackendServer{
+						Target:      "servers",
+						BackendName: node.Name,
+						BackendIP:   node.PrivateIPAddress,
+						BackendPort: apiServerPort,
+					},
+					e2eMachine.Spec.Location,
 				); err != nil {
 					logger.Error(err, "Failed to register node with load balancer, will retry")
 					return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
@@ -409,19 +432,30 @@ func (r *E2EMachineReconciler) reconcileDelete(
 
 		// Deregister from load balancer if it's a control plane node
 		if e2eCluster.Status.Network.LoadBalancerID != 0 {
-			if err := r.E2EClient.RemoveBackendNode(
-				ctx,
-				e2eCluster.Status.Network.LoadBalancerID,
-				nodeID,
-			); err != nil {
-				// Log but don't fail — the LB may already be gone
-				logger.V(1).Info("Could not deregister node from load balancer", "error", err)
+			// Find the node's private IP from the machine's stored addresses
+			var privateIP string
+			for _, addr := range e2eMachine.Status.Addresses {
+				if addr.Type == clusterv1.MachineInternalIP {
+					privateIP = addr.Address
+					break
+				}
+			}
+			if privateIP != "" {
+				if err := r.E2EClient.RemoveBackendServer(
+					ctx,
+					e2eCluster.Status.Network.LoadBalancerID,
+					privateIP,
+					e2eMachine.Spec.Location,
+				); err != nil {
+					// Log but don't fail — the LB may already be gone
+					logger.V(1).Info("Could not deregister node from load balancer", "error", err)
+				}
 			}
 		}
 
 		// Delete the node
 		logger.Info("Deleting E2E compute node", "nodeID", nodeID)
-		if err := r.E2EClient.DeleteNode(ctx, nodeID); err != nil {
+		if err := r.E2EClient.DeleteNode(ctx, nodeID, e2eMachine.Spec.Location); err != nil {
 			if !errors.Is(err, cloud.ErrNodeNotFound) {
 				return ctrl.Result{}, fmt.Errorf("deleting E2E node %d: %w", nodeID, err)
 			}

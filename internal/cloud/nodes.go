@@ -43,24 +43,31 @@ type Node struct {
 
 // CreateNodeRequest is the request payload for creating a node.
 type CreateNodeRequest struct {
-	Name                 string `json:"name"`
-	Plan                 string `json:"plan"`
-	Image                string `json:"image"`
-	Region               string `json:"region"`
-	Label                string `json:"label,omitempty"`
-	SSHKeys              []int  `json:"ssh_keys,omitempty"`
-	Backups              bool   `json:"backups"`
-	EnableBitninja       bool   `json:"enable_bitninja"`
-	DisablePassword      bool   `json:"disable_password"`
-	IsSavedImage         bool   `json:"is_saved_image"`
-	SavedImageTemplateID *int   `json:"saved_image_template_id,omitempty"`
-	ReserveIP            string `json:"reserve_ip,omitempty"`
-	IsIPv6Availed        bool   `json:"is_ipv6_availed"`
-	VPCID                string `json:"vpc_id,omitempty"`
-	NumberOfInstances    int    `json:"number_of_instances"`
-	DefaultPublicIP      bool   `json:"default_public_ip"`
-	SecurityGroupID      int    `json:"security_group_id,omitempty"`
-	StartScript          string `json:"start_script,omitempty"`
+	Name                 string   `json:"name"`
+	Plan                 string   `json:"plan"`
+	Image                string   `json:"image"`
+	Region               string   `json:"region"`
+	Label                string   `json:"label,omitempty"`
+	SSHKeys              []string `json:"ssh_keys"`
+	StartScripts         []string `json:"start_scripts"`
+	Backups              bool     `json:"backups"`
+	EnableBitninja       bool     `json:"enable_bitninja"`
+	DisablePassword      bool     `json:"disable_password"`
+	IsSavedImage         bool     `json:"is_saved_image"`
+	SavedImageTemplateID *int     `json:"saved_image_template_id"`
+	ReserveIP            string   `json:"reserve_ip"`
+	IsIPv6Availed        bool     `json:"is_ipv6_availed"`
+	VPCID                int      `json:"vpc_id,omitempty"`
+	SubnetID             *string  `json:"subnet_id"`
+	DefaultPublicIP      bool     `json:"default_public_ip"`
+	IsPrivate            bool     `json:"is_private"`
+	NgcContainerID       *int     `json:"ngc_container_id"`
+	NumberOfInstances    int      `json:"number_of_instances"`
+	SecurityGroupID      int      `json:"security_group_id,omitempty"`
+	IsEncryptionEnabled  bool     `json:"isEncryptionEnabled"`
+
+	// Location is not sent in the body — it's passed as a query parameter.
+	Location string `json:"-"`
 }
 
 // NodeActionRequest is the request payload for performing an action on a node.
@@ -83,7 +90,12 @@ func (c *Client) CreateNode(ctx context.Context, req CreateNodeRequest) (*Node, 
 		req.NumberOfInstances = 1
 	}
 
-	data, err := c.doRequest(ctx, http.MethodPost, "/nodes/", req)
+	extra := map[string]string{}
+	if req.Location != "" {
+		extra["location"] = req.Location
+	}
+
+	data, err := c.doRequest(ctx, http.MethodPost, "/nodes/", req, extra)
 	if err != nil {
 		return nil, fmt.Errorf("creating node: %w", err)
 	}
@@ -96,8 +108,13 @@ func (c *Client) CreateNode(ctx context.Context, req CreateNodeRequest) (*Node, 
 }
 
 // GetNode retrieves a node by ID.
-func (c *Client) GetNode(ctx context.Context, nodeID int) (*Node, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%d/", nodeID), nil)
+func (c *Client) GetNode(ctx context.Context, nodeID int, location string) (*Node, error) {
+	extra := map[string]string{}
+	if location != "" {
+		extra["location"] = location
+	}
+
+	data, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%d/", nodeID), nil, extra)
 	if err != nil {
 		return nil, fmt.Errorf("getting node %d: %w", nodeID, err)
 	}
@@ -110,8 +127,19 @@ func (c *Client) GetNode(ctx context.Context, nodeID int) (*Node, error) {
 }
 
 // ListNodes retrieves all nodes.
-func (c *Client) ListNodes(ctx context.Context) ([]Node, error) {
-	data, err := c.doRequest(ctx, http.MethodGet, "/nodes/", nil)
+func (c *Client) ListNodes(ctx context.Context, location string, pageNo int, perPage int) ([]Node, error) {
+	extra := map[string]string{}
+	if location != "" {
+		extra["location"] = location
+	}
+	if pageNo > 0 {
+		extra["page_no"] = fmt.Sprintf("%d", pageNo)
+	}
+	if perPage > 0 {
+		extra["per_page"] = fmt.Sprintf("%d", perPage)
+	}
+
+	data, err := c.doRequest(ctx, http.MethodGet, "/nodes/", nil, extra)
 	if err != nil {
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
@@ -124,8 +152,16 @@ func (c *Client) ListNodes(ctx context.Context) ([]Node, error) {
 }
 
 // DeleteNode deletes a node by ID.
-func (c *Client) DeleteNode(ctx context.Context, nodeID int) error {
-	_, err := c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%d/", nodeID), nil)
+func (c *Client) DeleteNode(ctx context.Context, nodeID int, location string) error {
+	extra := map[string]string{
+		"reserve_ip_required":      "",
+		"reserve_ip_pool_required": "",
+	}
+	if location != "" {
+		extra["location"] = location
+	}
+
+	_, err := c.doRequest(ctx, http.MethodDelete, fmt.Sprintf("/nodes/%d/", nodeID), nil, extra)
 	if err != nil {
 		return fmt.Errorf("deleting node %d: %w", nodeID, err)
 	}
