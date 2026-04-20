@@ -401,10 +401,10 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 				return ctrl.Result{}, fmt.Errorf("getting bootstrap data: %w", err)
 			}
 
-			// Write the bootstrap script to the node and execute it
-			// The bootstrap data is base64 encoded cloud-init, we decode and run it
-			logger.Info("Executing bootstrap script via SSH", "host", node.PublicIPAddress)
-			cmd := fmt.Sprintf("echo '%s' | base64 -d > /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh", bootstrapData)
+			// Write the cloud-init data to the node and apply it
+			// The bootstrap data is base64 encoded cloud-init YAML
+			logger.Info("Applying bootstrap cloud-init via SSH", "host", node.PublicIPAddress)
+			cmd := fmt.Sprintf("echo '%s' | base64 -d > /etc/cloud/cloud.cfg.d/99_bootstrap.cfg && cloud-init clean --logs && cloud-init init --local && cloud-init init && cloud-init modules --mode=config && cloud-init modules --mode=final", bootstrapData)
 			output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, cmd)
 			if err != nil {
 				logger.Error(err, "Bootstrap script failed", "output", output)
