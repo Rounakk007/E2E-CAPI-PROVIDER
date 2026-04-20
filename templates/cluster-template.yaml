@@ -9,10 +9,10 @@ spec:
   clusterNetwork:
     pods:
       cidrBlocks:
-        - "${POD_CIDR:=10.244.0.0/16}"
+        - "${POD_CIDR}"
     services:
       cidrBlocks:
-        - "${SERVICE_CIDR:=10.96.0.0/12}"
+        - "${SERVICE_CIDR}"
   infrastructureRef:
     apiVersion: infrastructure.e2enetworks.com/v1beta1
     kind: E2ECluster
@@ -29,10 +29,12 @@ metadata:
   name: "${CLUSTER_NAME}"
   namespace: "${NAMESPACE}"
 spec:
-  region: "${E2E_REGION:=ncr}"
+  region: "${E2E_REGION}"
+  location: "${E2E_LOCATION}"
   network:
-    vpcID: "${E2E_VPC_ID:=}"
-  sshKeyName: "${E2E_SSH_KEY_NAME:=}"
+    vpcID: "${E2E_VPC_ID}"
+  loadBalancer:
+    securityGroupID: ${E2E_SECURITY_GROUP_ID}
 ---
 # Control Plane
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
@@ -41,8 +43,8 @@ metadata:
   name: "${CLUSTER_NAME}-control-plane"
   namespace: "${NAMESPACE}"
 spec:
-  replicas: ${CONTROL_PLANE_MACHINE_COUNT:=1}
-  version: "${KUBERNETES_VERSION:=v1.30.0}"
+  replicas: ${CONTROL_PLANE_MACHINE_COUNT}
+  version: "${KUBERNETES_VERSION}"
   machineTemplate:
     infrastructureRef:
       apiVersion: infrastructure.e2enetworks.com/v1beta1
@@ -74,8 +76,11 @@ metadata:
 spec:
   template:
     spec:
-      plan: "${E2E_CONTROL_PLANE_PLAN:=C3.8GB}"
-      image: "${E2E_IMAGE:=Ubuntu-22.04}"
+      plan: "${E2E_CONTROL_PLANE_PLAN}"
+      image: "${E2E_IMAGE}"
+      location: "${E2E_LOCATION}"
+      sshKeys:
+        - "${E2E_SSH_KEYS}"
       enablePublicIP: true
 ---
 # Worker MachineDeployment
@@ -86,13 +91,13 @@ metadata:
   namespace: "${NAMESPACE}"
 spec:
   clusterName: "${CLUSTER_NAME}"
-  replicas: ${WORKER_MACHINE_COUNT:=1}
+  replicas: ${WORKER_MACHINE_COUNT}
   selector:
     matchLabels: {}
   template:
     spec:
       clusterName: "${CLUSTER_NAME}"
-      version: "${KUBERNETES_VERSION:=v1.30.0}"
+      version: "${KUBERNETES_VERSION}"
       bootstrap:
         configRef:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
@@ -112,8 +117,11 @@ metadata:
 spec:
   template:
     spec:
-      plan: "${E2E_WORKER_PLAN:=C2-12GB}"
-      image: "${E2E_IMAGE:=Ubuntu-22.04}"
+      plan: "${E2E_WORKER_PLAN}"
+      image: "${E2E_IMAGE}"
+      location: "${E2E_LOCATION}"
+      sshKeys:
+        - "${E2E_SSH_KEYS}"
       enablePublicIP: true
 ---
 # Worker Bootstrap Config
