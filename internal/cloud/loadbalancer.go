@@ -23,17 +23,58 @@ import (
 	"net/http"
 )
 
-// LoadBalancer represents an E2E Cloud load balancer from the API response.
+// CreateLoadBalancerResponse is the response from the LB create API.
+type CreateLoadBalancerResponse struct {
+	ApplianceID int    `json:"appliance_id"`
+	ID          int    `json:"id"`
+	IP          string `json:"IP"`
+}
+
+// LoadBalancerNodeDetail contains the node info of an LB appliance.
+type LoadBalancerNodeDetail struct {
+	NodeID    int    `json:"node_id"`
+	PublicIP  string `json:"public_ip"`
+	PrivateIP string `json:"private_ip"`
+	PlanName  string `json:"plan_name"`
+}
+
+// LoadBalancerContext contains the config from appliance_instance[].context.
+type LoadBalancerContext struct {
+	HostTarget      string       `json:"host_target"`
+	ManagementIP    string       `json:"management_ip"`
+	LBName          string       `json:"lb_name"`
+	LBType          string       `json:"lb_type"`
+	LBMode          string       `json:"lb_mode"`
+	LBPort          string       `json:"lb_port"`
+	PlanName        string       `json:"plan_name"`
+	SecurityGroupID int          `json:"security_group_id"`
+	TCPBackend      []TCPBackend `json:"tcp_backend"`
+}
+
+// LoadBalancerInstance represents one entry in appliance_instance[].
+type LoadBalancerInstance struct {
+	ID      string              `json:"id"`
+	Context LoadBalancerContext `json:"context"`
+}
+
+// LoadBalancer represents an E2E Cloud load balancer from the list API response.
 type LoadBalancer struct {
-	ID           int    `json:"id"`
-	Name         string `json:"lb_name"`
-	Status       string `json:"status"`
-	HostTarget   string `json:"host_target"`
-	ManagementIP string `json:"management_ip"`
-	LBType       string `json:"lb_type"`
-	LBMode       string `json:"lb_mode"`
-	LBPort       string `json:"lb_port"`
-	PlanName     string `json:"plan_name"`
+	ID                int                    `json:"id"`
+	Name              string                 `json:"name"`
+	Status            string                 `json:"status"`
+	NodeDetail        LoadBalancerNodeDetail `json:"node_detail"`
+	ApplianceInstance []LoadBalancerInstance  `json:"appliance_instance"`
+}
+
+// GetPublicIP returns the public IP of the load balancer.
+func (lb *LoadBalancer) GetPublicIP() string {
+	if lb.NodeDetail.PublicIP != "" {
+		return lb.NodeDetail.PublicIP
+	}
+	if len(lb.ApplianceInstance) > 0 {
+		return lb.ApplianceInstance[0].Context.HostTarget
+	}
+	return ""
 }
 
 // SSLContext defines SSL configuration for a load balancer.
@@ -92,7 +133,7 @@ type CreateLoadBalancerRequest struct {
 
 // CreateLoadBalancer creates a new load balancer.
 // POST /appliances/load-balancers/
-func (c *Client) CreateLoadBalancer(ctx context.Context, req CreateLoadBalancerRequest) (*LoadBalancer, error) {
+func (c *Client) CreateLoadBalancer(ctx context.Context, req CreateLoadBalancerRequest) (*CreateLoadBalancerResponse, error) {
 	extra := map[string]string{}
 	if req.Location != "" {
 		extra["location"] = req.Location
@@ -103,11 +144,11 @@ func (c *Client) CreateLoadBalancer(ctx context.Context, req CreateLoadBalancerR
 		return nil, fmt.Errorf("creating load balancer: %w", err)
 	}
 
-	var lb LoadBalancer
-	if err := parseResponse(data, &lb); err != nil {
+	var resp CreateLoadBalancerResponse
+	if err := parseResponse(data, &resp); err != nil {
 		return nil, fmt.Errorf("parsing create load balancer response: %w", err)
 	}
-	return &lb, nil
+	return &resp, nil
 }
 
 // GetLoadBalancer retrieves a load balancer by ID from the appliances list.

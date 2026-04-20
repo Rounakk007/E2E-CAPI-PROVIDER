@@ -194,7 +194,7 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 				return err
 			}
 		} else {
-			e2eCluster.Status.Network.APIServerIP = lb.HostTarget
+			e2eCluster.Status.Network.APIServerIP = lb.GetPublicIP()
 			return nil
 		}
 	}
@@ -241,9 +241,9 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 	}
 
 	e2eCluster.Status.Network.LoadBalancerID = lb.ID
-	e2eCluster.Status.Network.APIServerIP = lb.HostTarget
+	e2eCluster.Status.Network.APIServerIP = lb.IP
 
-	logger.Info("Load balancer created", "id", lb.ID, "ip", lb.HostTarget)
+	logger.Info("Load balancer created", "id", lb.ID, "ip", lb.IP)
 	return nil
 }
 
