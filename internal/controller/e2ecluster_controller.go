@@ -284,10 +284,7 @@ func (r *E2EClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 		Watches(
 			&clusterv1.Cluster{},
 			handler.EnqueueRequestsFromMapFunc(util.ClusterToInfrastructureMapFunc(
-				ctx,
 				infrav1.GroupVersion.WithKind("E2ECluster"),
-				mgr.GetClient(),
-				&infrav1.E2ECluster{},
 			)),
 		).
 		WithEventFilter(predicates.ResourceNotPaused(log.FromContext(ctx))).
