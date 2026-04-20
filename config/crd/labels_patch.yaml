@@ -1,0 +1,27 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: e2eclusters.infrastructure.e2enetworks.com
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: e2emachines.infrastructure.e2enetworks.com
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: e2eclustertemplates.infrastructure.e2enetworks.com
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: e2emachinetemplates.infrastructure.e2enetworks.com
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
