@@ -25,8 +25,8 @@ import (
 
 // CloudInitConfig represents the relevant parts of a cloud-init config.
 type CloudInitConfig struct {
-	WriteFiles []WriteFile `yaml:"write_files"`
-	RunCmd     [][]string  `yaml:"runcmd"`
+	WriteFiles []WriteFile   `yaml:"write_files"`
+	RunCmd     []interface{} `yaml:"runcmd"`
 }
 
 // WriteFile represents a single file entry in cloud-init write_files.
@@ -78,9 +78,20 @@ func CloudInitToScript(cloudInitData string) (string, error) {
 		script.WriteString("\n")
 	}
 
-	// Run commands
+	// Run commands — each entry can be a string or a list of strings
 	for _, cmd := range config.RunCmd {
-		script.WriteString(strings.Join(cmd, " ") + "\n")
+		switch v := cmd.(type) {
+		case string:
+			script.WriteString(v + "\n")
+		case []interface{}:
+			parts := make([]string, 0, len(v))
+			for _, p := range v {
+				if s, ok := p.(string); ok {
+					parts = append(parts, s)
+				}
+			}
+			script.WriteString(strings.Join(parts, " ") + "\n")
+		}
 	}
 
 	return script.String(), nil
