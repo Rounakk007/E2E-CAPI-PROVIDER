@@ -18,6 +18,7 @@ package cloud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 )
@@ -70,6 +71,11 @@ type CreateNodeRequest struct {
 	Location string `json:"-"`
 }
 
+// createNodeResponseData is the shape of data in the create node API response.
+type createNodeResponseData struct {
+	NodeCreateResponse []Node `json:"node_create_response"`
+}
+
 // NodeActionRequest is the request payload for performing an action on a node.
 type NodeActionRequest struct {
 	Type string `json:"type"`
@@ -100,11 +106,22 @@ func (c *Client) CreateNode(ctx context.Context, req CreateNodeRequest) (*Node, 
 		return nil, fmt.Errorf("creating node: %w", err)
 	}
 
-	var node Node
-	if err := parseResponse(data, &node); err != nil {
-		return nil, fmt.Errorf("parsing create node response: %w", err)
+	// The create response has: data.node_create_response[0]
+	var resp APIResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("parsing create node response wrapper: %w", err)
 	}
-	return &node, nil
+
+	var respData createNodeResponseData
+	if err := json.Unmarshal(resp.Data, &respData); err != nil {
+		return nil, fmt.Errorf("parsing create node response data: %w", err)
+	}
+
+	if len(respData.NodeCreateResponse) == 0 {
+		return nil, fmt.Errorf("create node response has no nodes")
+	}
+
+	return &respData.NodeCreateResponse[0], nil
 }
 
 // GetNode retrieves a node by ID.
