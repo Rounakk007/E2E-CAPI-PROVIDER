@@ -395,16 +395,24 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 				return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
 			}
 
-			// Get the bootstrap data
-			bootstrapData, err := r.getBootstrapData(ctx, machine)
+			// Get the raw bootstrap data (cloud-init YAML)
+			rawBootstrapData, err := r.getRawBootstrapData(ctx, machine)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("getting bootstrap data: %w", err)
 			}
 
-			// Write the cloud-init data to the node and apply it
-			// The bootstrap data is base64 encoded cloud-init YAML
-			logger.Info("Applying bootstrap cloud-init via SSH", "host", node.PublicIPAddress)
-			cmd := fmt.Sprintf("echo '%s' | base64 -d > /etc/cloud/cloud.cfg.d/99_bootstrap.cfg && cloud-init clean --logs && cloud-init init --local && cloud-init init && cloud-init modules --mode=config && cloud-init modules --mode=final", bootstrapData)
+			// Convert cloud-init YAML to a bash script
+			bootstrapScript, err := CloudInitToScript(rawBootstrapData)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("converting cloud-init to script: %w", err)
+			}
+
+			// Upload and execute the bootstrap script
+			logger.Info("Executing bootstrap script via SSH", "host", node.PublicIPAddress)
+
+			// Use base64 to safely transfer the script
+			encodedScript := base64.StdEncoding.EncodeToString([]byte(bootstrapScript))
+			cmd := fmt.Sprintf("echo '%s' | base64 -d > /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && bash /tmp/bootstrap.sh", encodedScript)
 			output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, cmd)
 			if err != nil {
 				logger.Error(err, "Bootstrap script failed", "output", output)
@@ -546,6 +554,29 @@ func (r *E2EMachineReconciler) getBootstrapData(ctx context.Context, machine *cl
 	}
 
 	return base64.StdEncoding.EncodeToString(value), nil
+}
+
+// getRawBootstrapData fetches the bootstrap data secret and returns the raw content (not base64 encoded).
+func (r *E2EMachineReconciler) getRawBootstrapData(ctx context.Context, machine *clusterv1.Machine) (string, error) {
+	if machine.Spec.Bootstrap.DataSecretName == nil {
+		return "", fmt.Errorf("bootstrap data secret name is nil")
+	}
+
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{
+		Namespace: machine.Namespace,
+		Name:      *machine.Spec.Bootstrap.DataSecretName,
+	}
+	if err := r.Get(ctx, key, secret); err != nil {
+		return "", fmt.Errorf("fetching bootstrap data secret %s/%s: %w", key.Namespace, key.Name, err)
+	}
+
+	value, ok := secret.Data["value"]
+	if !ok {
+		return "", fmt.Errorf("bootstrap data secret %s/%s has no 'value' key", key.Namespace, key.Name)
+	}
+
+	return string(value), nil
 }
 
 // machineFromE2EMachine fetches the owning Machine for an E2EMachine.

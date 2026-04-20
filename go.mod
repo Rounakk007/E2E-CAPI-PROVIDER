@@ -4,6 +4,7 @@ go 1.22.0
 
 require (
 	golang.org/x/crypto v0.36.0
+	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.30.0
 	k8s.io/apimachinery v0.30.0
 	k8s.io/client-go v0.30.0
