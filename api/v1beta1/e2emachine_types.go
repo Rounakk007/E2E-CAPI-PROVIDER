@@ -89,6 +89,10 @@ type E2EMachineStatus struct {
 	// +optional
 	InstanceStatus string `json:"instanceStatus,omitempty"`
 
+	// Bootstrapped indicates that the bootstrap script has been executed on the node via SSH.
+	// +optional
+	Bootstrapped bool `json:"bootstrapped,omitempty"`
+
 	// Addresses contains the addresses of the machine.
 	// +optional
 	Addresses []clusterv1.MachineAddress `json:"addresses,omitempty"`

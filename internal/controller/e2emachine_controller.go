@@ -49,6 +49,8 @@ import (
 
 const (
 	requeueAfterShort = 15 * time.Second
+	sshPort           = 22
+	sshUser           = "root"
 )
 
 // E2EMachineReconciler reconciles an E2EMachine object.
@@ -56,6 +58,7 @@ type E2EMachineReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
 	E2EClient *cloud.Client
+	SSHKey    *SSHKeyPair
 }
 
 // +kubebuilder:rbac:groups=infrastructure.e2enetworks.com,resources=e2emachines,verbs=get;list;watch;create;update;patch;delete
@@ -178,25 +181,12 @@ func (r *E2EMachineReconciler) reconcileNormal(
 		return ctrl.Result{}, nil
 	}
 
-	// Check if bootstrap data is available
-	if machine.Spec.Bootstrap.DataSecretName == nil {
-		logger.Info("Waiting for bootstrap data to be available")
-		conditions.MarkFalse(
-			e2eMachine,
-			infrav1.InstanceReadyCondition,
-			infrav1.BootstrapDataNotReadyReason,
-			clusterv1.ConditionSeverityInfo,
-			"Waiting for bootstrap data",
-		)
-		return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
-	}
-
 	// If we already have an instance, check its status
 	if e2eMachine.Status.InstanceID != nil {
-		return r.reconcileInstanceStatus(ctx, e2eMachine, e2eCluster)
+		return r.reconcileInstanceStatus(ctx, e2eMachine, machine, e2eCluster)
 	}
 
-	// Create a new instance
+	// Create a new instance (without bootstrap data — we'll SSH it in later)
 	return r.createInstance(ctx, e2eMachine, machine, e2eCluster)
 }
 
@@ -225,14 +215,11 @@ func (r *E2EMachineReconciler) createInstance(
 		vpcID, _ = strconv.Atoi(vpcIDStr)
 	}
 
-	// Get bootstrap data
-	startScripts := []string{}
-	startScript, err := r.getBootstrapData(ctx, machine)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("getting bootstrap data: %w", err)
-	}
-	if startScript != "" {
-		startScripts = append(startScripts, startScript)
+	// Build SSH keys list: user keys + provider key
+	sshKeys := make([]string, 0, len(e2eMachine.Spec.SSHKeys)+1)
+	sshKeys = append(sshKeys, e2eMachine.Spec.SSHKeys...)
+	if r.SSHKey != nil {
+		sshKeys = append(sshKeys, r.SSHKey.PublicKey)
 	}
 
 	// Determine public IP setting
@@ -275,8 +262,8 @@ func (r *E2EMachineReconciler) createInstance(
 		Region:            region,
 		Location:          e2eMachine.Spec.Location,
 		Label:             e2eMachine.Namespace,
-		SSHKeys:           e2eMachine.Spec.SSHKeys,
-		StartScripts:      startScripts,
+		SSHKeys:           sshKeys,
+		StartScripts:      []string{},
 		DisablePassword:   true,
 		NumberOfInstances: 1,
 		DefaultPublicIP:   defaultPublicIP,
@@ -310,6 +297,7 @@ func (r *E2EMachineReconciler) createInstance(
 func (r *E2EMachineReconciler) reconcileInstanceStatus(
 	ctx context.Context,
 	e2eMachine *infrav1.E2EMachine,
+	machine *clusterv1.Machine,
 	e2eCluster *infrav1.E2ECluster,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -364,25 +352,91 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 		return ctrl.Result{RequeueAfter: requeueAfterLong}, nil
 	}
 
-	// If node is running, mark as ready
+	// If node is running, bootstrap via SSH then mark as ready
 	if cloud.NodeIsRunning(node) {
-		// Set the provider ID
-		providerID := fmt.Sprintf("e2e://%s/%d", e2eCluster.Spec.Region, node.ID)
-		e2eMachine.Spec.ProviderID = &providerID
-
-		// Mark as ready
-		e2eMachine.Status.Ready = true
-		conditions.MarkTrue(e2eMachine, infrav1.InstanceReadyCondition)
-		conditions.MarkTrue(e2eMachine, clusterv1.ReadyCondition)
-
 		logger.Info("E2E node is running",
 			"nodeID", nodeID,
-			"providerID", providerID,
 			"publicIP", node.PublicIPAddress,
 			"privateIP", node.PrivateIPAddress,
 		)
 
-		// Register with the load balancer if this is a control plane node
+		// Step 1: Run bootstrap script via SSH if not already done
+		if !e2eMachine.Status.Bootstrapped {
+			// Need bootstrap data to be available
+			if machine.Spec.Bootstrap.DataSecretName == nil {
+				logger.Info("Waiting for bootstrap data to be available")
+				conditions.MarkFalse(
+					e2eMachine,
+					infrav1.InstanceReadyCondition,
+					infrav1.BootstrapDataNotReadyReason,
+					clusterv1.ConditionSeverityInfo,
+					"Waiting for bootstrap data",
+				)
+				return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
+			}
+
+			// Need a public IP to SSH into
+			if node.PublicIPAddress == "" {
+				logger.Info("Waiting for node to get a public IP")
+				return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
+			}
+
+			// Check if SSH is reachable
+			sshClient := cloud.NewSSHClient(r.SSHKey.PrivateKey)
+			if !sshClient.IsSSHReady(node.PublicIPAddress, sshPort) {
+				logger.Info("Waiting for SSH to become available", "host", node.PublicIPAddress)
+				conditions.MarkFalse(
+					e2eMachine,
+					infrav1.InstanceReadyCondition,
+					infrav1.WaitingForSSHReason,
+					clusterv1.ConditionSeverityInfo,
+					"Waiting for SSH to become available",
+				)
+				return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
+			}
+
+			// Get the bootstrap data
+			bootstrapData, err := r.getBootstrapData(ctx, machine)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("getting bootstrap data: %w", err)
+			}
+
+			// Write the bootstrap script to the node and execute it
+			// The bootstrap data is base64 encoded cloud-init, we decode and run it
+			logger.Info("Executing bootstrap script via SSH", "host", node.PublicIPAddress)
+			cmd := fmt.Sprintf("echo '%s' | base64 -d > /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh", bootstrapData)
+			output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, cmd)
+			if err != nil {
+				logger.Error(err, "Bootstrap script failed", "output", output)
+				conditions.MarkFalse(
+					e2eMachine,
+					infrav1.InstanceReadyCondition,
+					infrav1.BootstrapFailedReason,
+					clusterv1.ConditionSeverityError,
+					fmt.Sprintf("Bootstrap failed: %v", err),
+				)
+				// Requeue to retry — the script may fail transiently
+				return ctrl.Result{RequeueAfter: requeueAfterLong}, nil
+			}
+
+			logger.Info("Bootstrap script completed successfully")
+			e2eMachine.Status.Bootstrapped = true
+		}
+
+		// Step 2: Set the provider ID and mark ready
+		providerID := fmt.Sprintf("e2e://%s/%d", e2eCluster.Spec.Region, node.ID)
+		e2eMachine.Spec.ProviderID = &providerID
+
+		e2eMachine.Status.Ready = true
+		conditions.MarkTrue(e2eMachine, infrav1.InstanceReadyCondition)
+		conditions.MarkTrue(e2eMachine, clusterv1.ReadyCondition)
+
+		logger.Info("E2E machine is ready",
+			"nodeID", nodeID,
+			"providerID", providerID,
+		)
+
+		// Step 3: Register with the load balancer if this is a control plane node
 		if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
 			if e2eCluster.Status.Network.LoadBalancerID != 0 && node.PrivateIPAddress != "" {
 				if err := r.E2EClient.AddBackendServer(

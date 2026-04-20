@@ -52,4 +52,13 @@ const (
 
 	// BootstrapDataNotReadyReason indicates bootstrap data is not yet available.
 	BootstrapDataNotReadyReason = "BootstrapDataNotReady"
+
+	// BootstrapSucceededReason indicates bootstrap was applied via SSH.
+	BootstrapSucceededReason = "BootstrapSucceeded"
+
+	// BootstrapFailedReason indicates bootstrap via SSH failed.
+	BootstrapFailedReason = "BootstrapFailed"
+
+	// WaitingForSSHReason indicates the node is running but SSH is not ready yet.
+	WaitingForSSHReason = "WaitingForSSH"
 )

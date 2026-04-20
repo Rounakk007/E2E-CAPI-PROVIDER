@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
@@ -25,6 +26,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -91,7 +93,25 @@ func main() {
 		ProjectID: projectID,
 	})
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	// Get kubeconfig for direct client (needed before manager starts)
+	restConfig := ctrl.GetConfigOrDie()
+
+	// Create a direct (non-cached) client for SSH key setup
+	directClient, err := client.New(restConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create direct client")
+		os.Exit(1)
+	}
+
+	// Ensure the provider's SSH key pair exists
+	sshKey, err := controller.EnsureSSHKeyPair(context.Background(), directClient, "default")
+	if err != nil {
+		setupLog.Error(err, "unable to ensure SSH key pair")
+		os.Exit(1)
+	}
+	setupLog.Info("Provider SSH key pair ready")
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
@@ -120,6 +140,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		E2EClient: e2eClient,
+		SSHKey:    sshKey,
 	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "E2EMachine")
 		os.Exit(1)
