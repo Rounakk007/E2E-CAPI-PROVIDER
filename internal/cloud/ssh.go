@@ -47,7 +47,7 @@ func (s *SSHClient) RunCommand(host string, port int, user string, command strin
 			ssh.PublicKeys(signer),
 		},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         30 * time.Second,
+		Timeout:         10 * time.Minute,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)

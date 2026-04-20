@@ -402,7 +402,11 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			}
 
 			// Convert cloud-init YAML to a bash script
-			bootstrapScript, err := CloudInitToScript(rawBootstrapData)
+			kubeVersion := ""
+			if machine.Spec.Version != nil {
+				kubeVersion = *machine.Spec.Version
+			}
+			bootstrapScript, err := CloudInitToScript(rawBootstrapData, kubeVersion)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("converting cloud-init to script: %w", err)
 			}

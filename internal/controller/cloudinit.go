@@ -37,10 +37,70 @@ type WriteFile struct {
 	Content     string `yaml:"content"`
 }
 
+// kubePreinstallScript installs containerd, kubelet, and kubeadm on Ubuntu.
+// This is needed because E2E's base Ubuntu image doesn't have Kubernetes components.
+const kubePreinstallScript = `
+echo "=== Installing Kubernetes prerequisites ==="
+
+# Disable swap
+swapoff -a
+sed -i '/swap/d' /etc/fstab
+
+# Load required kernel modules
+cat > /etc/modules-load.d/k8s.conf << EOF
+overlay
+br_netfilter
+EOF
+modprobe overlay
+modprobe br_netfilter
+
+# Set sysctl params
+cat > /etc/sysctl.d/k8s.conf << EOF
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+sysctl --system
+
+# Install containerd
+apt-get update -q
+apt-get install -y -q apt-transport-https ca-certificates curl gnupg
+
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+
+apt-get update -q
+apt-get install -y -q containerd.io
+
+# Configure containerd to use systemd cgroup
+mkdir -p /etc/containerd
+containerd config default > /etc/containerd/config.toml
+sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+systemctl restart containerd
+systemctl enable containerd
+
+# Install kubeadm, kubelet, kubectl
+KUBE_VERSION="${KUBE_VERSION:-1.30}"
+curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+
+apt-get update -q
+apt-get install -y -q kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+systemctl enable kubelet
+
+echo "=== Kubernetes prerequisites installed ==="
+`
+
 // CloudInitToScript converts cloud-init YAML to a bash script that:
-// 1. Writes all files from write_files
-// 2. Executes all commands from runcmd
-func CloudInitToScript(cloudInitData string) (string, error) {
+// 1. Installs Kubernetes prerequisites (containerd, kubeadm, kubelet)
+// 2. Writes all files from write_files
+// 3. Executes all commands from runcmd
+func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error) {
 	var config CloudInitConfig
 
 	// The cloud-init data may start with #cloud-config, strip it
@@ -51,7 +111,21 @@ func CloudInitToScript(cloudInitData string) (string, error) {
 	}
 
 	var script strings.Builder
-	script.WriteString("#!/bin/bash\nset -e\n\n")
+	script.WriteString("#!/bin/bash\nset -e\nexport DEBIAN_FRONTEND=noninteractive\n\n")
+
+	// Set Kubernetes version for the preinstall script
+	if kubeVersion != "" {
+		// Extract major.minor from version like "v1.30.0" -> "1.30"
+		ver := strings.TrimPrefix(kubeVersion, "v")
+		parts := strings.SplitN(ver, ".", 3)
+		if len(parts) >= 2 {
+			script.WriteString(fmt.Sprintf("export KUBE_VERSION='%s.%s'\n\n", parts[0], parts[1]))
+		}
+	}
+
+	// Install prerequisites
+	script.WriteString(kubePreinstallScript)
+	script.WriteString("\n")
 
 	// Write files
 	for _, f := range config.WriteFiles {
