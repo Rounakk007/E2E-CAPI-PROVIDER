@@ -42,58 +42,66 @@ type WriteFile struct {
 const kubePreinstallScript = `
 echo "=== Installing Kubernetes prerequisites ==="
 
-# Disable swap
-swapoff -a
-sed -i '/swap/d' /etc/fstab
+# Skip if kubeadm is already installed
+if command -v kubeadm &> /dev/null; then
+    echo "kubeadm already installed, skipping prerequisites"
+else
+    # Disable swap
+    swapoff -a
+    sed -i '/swap/d' /etc/fstab
 
-# Load required kernel modules
-cat > /etc/modules-load.d/k8s.conf << EOF
+    # Load required kernel modules
+    cat > /etc/modules-load.d/k8s.conf << EOF
 overlay
 br_netfilter
 EOF
-modprobe overlay
-modprobe br_netfilter
+    modprobe overlay
+    modprobe br_netfilter
 
-# Set sysctl params
-cat > /etc/sysctl.d/k8s.conf << EOF
+    # Set sysctl params
+    cat > /etc/sysctl.d/k8s.conf << EOF
 net.bridge.bridge-nf-call-iptables  = 1
 net.bridge.bridge-nf-call-ip6tables = 1
 net.ipv4.ip_forward                 = 1
 EOF
-sysctl --system
+    sysctl --system
 
-# Install containerd
-apt-get update -q
-apt-get install -y -q apt-transport-https ca-certificates curl gnupg
+    # Install containerd
+    apt-get update -q
+    apt-get install -y -q apt-transport-https ca-certificates curl gnupg
 
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
 
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
 
-apt-get update -q
-apt-get install -y -q containerd.io
+    apt-get update -q
+    apt-get install -y -q containerd.io
 
-# Configure containerd to use systemd cgroup
-mkdir -p /etc/containerd
-containerd config default > /etc/containerd/config.toml
-sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-systemctl restart containerd
-systemctl enable containerd
+    # Configure containerd to use systemd cgroup
+    mkdir -p /etc/containerd
+    containerd config default > /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    systemctl restart containerd
+    systemctl enable containerd
 
-# Install kubeadm, kubelet, kubectl
-KUBE_VERSION="${KUBE_VERSION:-1.30}"
-curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+    # Install kubeadm, kubelet, kubectl
+    KUBE_VERSION="${KUBE_VERSION:-1.30}"
+    curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
 
-apt-get update -q
-apt-get install -y -q kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl
+    apt-get update -q
+    apt-get install -y -q kubelet kubeadm kubectl
+    apt-mark hold kubelet kubeadm kubectl
 
-systemctl enable kubelet
+    systemctl enable kubelet
 
-echo "=== Kubernetes prerequisites installed ==="
+    echo "=== Kubernetes prerequisites installed ==="
+fi
+
+# Ensure containerd is running
+systemctl start containerd
 `
 
 // CloudInitToScript converts cloud-init YAML to a bash script that:
@@ -152,11 +160,16 @@ func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error)
 		script.WriteString("\n")
 	}
 
-	// Run commands — each entry can be a string or a list of strings
+	// Run commands — skip if bootstrap already completed
+	script.WriteString("# Run bootstrap commands (skip if already done)\n")
+	script.WriteString("if [ -f /run/cluster-api/bootstrap-success.complete ]; then\n")
+	script.WriteString("    echo 'Bootstrap already completed, skipping runcmd'\n")
+	script.WriteString("else\n")
+	script.WriteString("    mkdir -p /run/cluster-api\n")
 	for _, cmd := range config.RunCmd {
 		switch v := cmd.(type) {
 		case string:
-			script.WriteString(v + "\n")
+			script.WriteString("    " + v + "\n")
 		case []interface{}:
 			parts := make([]string, 0, len(v))
 			for _, p := range v {
@@ -164,9 +177,10 @@ func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error)
 					parts = append(parts, s)
 				}
 			}
-			script.WriteString(strings.Join(parts, " ") + "\n")
+			script.WriteString("    " + strings.Join(parts, " ") + "\n")
 		}
 	}
+	script.WriteString("fi\n")
 
 	return script.String(), nil
 }
