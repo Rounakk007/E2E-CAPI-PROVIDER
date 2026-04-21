@@ -166,6 +166,9 @@ func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error)
 	script.WriteString("    echo 'Bootstrap already completed, skipping runcmd'\n")
 	script.WriteString("else\n")
 	script.WriteString("    mkdir -p /run/cluster-api\n")
+	script.WriteString("    # Reset any partial kubeadm state from previous attempts\n")
+	script.WriteString("    kubeadm reset -f 2>/dev/null || true\n")
+	script.WriteString("    rm -rf /var/lib/etcd/*\n")
 	for _, cmd := range config.RunCmd {
 		switch v := cmd.(type) {
 		case string:
