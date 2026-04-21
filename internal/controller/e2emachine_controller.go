@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -352,7 +353,7 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 		return ctrl.Result{RequeueAfter: requeueAfterLong}, nil
 	}
 
-	// If node is running, bootstrap via SSH then mark as ready
+	// If node is running, register with LB, bootstrap via SSH, then mark as ready
 	if cloud.NodeIsRunning(node) {
 		logger.Info("E2E node is running",
 			"nodeID", nodeID,
@@ -360,7 +361,31 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			"privateIP", node.PrivateIPAddress,
 		)
 
-		// Step 1: Run bootstrap script via SSH if not already done
+		// Step 1: Register CP node with LB BEFORE bootstrap
+		// This must happen first because kubeadm init needs the API server
+		// reachable through the LB (kubelet connects via the LB IP).
+		if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
+			if e2eCluster.Status.Network.LoadBalancerID != 0 && node.PrivateIPAddress != "" {
+				logger.Info("Registering control plane node with LB before bootstrap")
+				if err := r.E2EClient.AddBackendServer(
+					ctx,
+					e2eCluster.Status.Network.LoadBalancerID,
+					cloud.TCPBackendServer{
+						Target:      "servers",
+						BackendName: node.Name,
+						BackendIP:   node.PrivateIPAddress,
+						BackendPort: apiServerPort,
+					},
+					e2eMachine.Spec.Location,
+				); err != nil {
+					logger.Error(err, "Failed to register node with load balancer, will retry")
+					return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
+				}
+				logger.Info("Registered control plane node with API server load balancer")
+			}
+		}
+
+		// Step 2: Run bootstrap script via SSH if not already done
 		if !e2eMachine.Status.Bootstrapped {
 			// Need bootstrap data to be available
 			if machine.Spec.Bootstrap.DataSecretName == nil {
@@ -432,10 +457,31 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			}
 
 			logger.Info("Bootstrap script completed successfully")
+
+			// Set providerID on the workload cluster node via SSH
+			// CAPI needs this to match Machine to Node
+			providerID := fmt.Sprintf("e2e://%s/%d", e2eCluster.Spec.Region, node.ID)
+			if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
+				// For CP nodes, use the admin kubeconfig to patch the node
+				hostname, _ := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, "hostname")
+				hostname = strings.TrimSpace(hostname)
+				if hostname != "" {
+					patchCmd := fmt.Sprintf(
+						`kubectl --kubeconfig /etc/kubernetes/admin.conf patch node %s -p '{"spec":{"providerID":"%s"}}'`,
+						hostname, providerID,
+					)
+					if output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, patchCmd); err != nil {
+						logger.Error(err, "Failed to set providerID on node", "output", output)
+					} else {
+						logger.Info("Set providerID on workload cluster node", "node", hostname, "providerID", providerID)
+					}
+				}
+			}
+
 			e2eMachine.Status.Bootstrapped = true
 		}
 
-		// Step 2: Set the provider ID and mark ready
+		// Step 3: Set the provider ID and mark ready
 		providerID := fmt.Sprintf("e2e://%s/%d", e2eCluster.Spec.Region, node.ID)
 		e2eMachine.Spec.ProviderID = &providerID
 
@@ -447,27 +493,6 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			"nodeID", nodeID,
 			"providerID", providerID,
 		)
-
-		// Step 3: Register with the load balancer if this is a control plane node
-		if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
-			if e2eCluster.Status.Network.LoadBalancerID != 0 && node.PrivateIPAddress != "" {
-				if err := r.E2EClient.AddBackendServer(
-					ctx,
-					e2eCluster.Status.Network.LoadBalancerID,
-					cloud.TCPBackendServer{
-						Target:      "servers",
-						BackendName: node.Name,
-						BackendIP:   node.PrivateIPAddress,
-						BackendPort: apiServerPort,
-					},
-					e2eMachine.Spec.Location,
-				); err != nil {
-					logger.Error(err, "Failed to register node with load balancer, will retry")
-					return ctrl.Result{RequeueAfter: requeueAfterShort}, nil
-				}
-				logger.Info("Registered control plane node with API server load balancer")
-			}
-		}
 
 		return ctrl.Result{}, nil
 	}

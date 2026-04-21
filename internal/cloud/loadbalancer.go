@@ -284,6 +284,19 @@ func (c *Client) AddBackendServer(ctx context.Context, lbID int, server TCPBacke
 	}
 
 	servers, _ := group["servers"].([]interface{})
+
+	// Check if server already registered (idempotent)
+	for _, s := range servers {
+		srv, ok := s.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if ip, _ := srv["backend_ip"].(string); ip == server.BackendIP {
+			// Already registered, nothing to do
+			return nil
+		}
+	}
+
 	newServer := map[string]interface{}{
 		"target":       server.Target,
 		"backend_name": server.BackendName,
