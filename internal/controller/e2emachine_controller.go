@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -184,7 +185,7 @@ func (r *E2EMachineReconciler) reconcileNormal(
 
 	// If we already have an instance, check its status
 	if e2eMachine.Status.InstanceID != nil {
-		return r.reconcileInstanceStatus(ctx, e2eMachine, machine, e2eCluster)
+		return r.reconcileInstanceStatus(ctx, e2eMachine, machine, e2eCluster, cluster)
 	}
 
 	// Create a new instance (without bootstrap data — we'll SSH it in later)
@@ -300,6 +301,7 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 	e2eMachine *infrav1.E2EMachine,
 	machine *clusterv1.Machine,
 	e2eCluster *infrav1.E2ECluster,
+	cluster *clusterv1.Cluster,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	nodeID := *e2eMachine.Status.InstanceID
@@ -458,22 +460,29 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 
 			logger.Info("Bootstrap script completed successfully")
 
-			// Set providerID on the workload cluster node via SSH
-			// CAPI needs this to match Machine to Node
+			// Set providerID on the workload cluster node.
+			// CAPI needs this to match Machine to Node.
 			providerID := fmt.Sprintf("e2e://%s/%d", e2eCluster.Spec.Region, node.ID)
-			if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
-				// For CP nodes, use the admin kubeconfig to patch the node
-				hostname, _ := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, "hostname")
-				hostname = strings.TrimSpace(hostname)
-				if hostname != "" {
+			hostname, _ := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, "hostname")
+			hostname = strings.TrimSpace(hostname)
+			if hostname != "" {
+				if util.IsControlPlaneMachine(machine) {
+					// CP: patch via SSH using the local admin.conf
 					patchCmd := fmt.Sprintf(
 						`kubectl --kubeconfig /etc/kubernetes/admin.conf patch node %s -p '{"spec":{"providerID":"%s"}}'`,
 						hostname, providerID,
 					)
 					if output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, patchCmd); err != nil {
-						logger.Error(err, "Failed to set providerID on node", "output", output)
+						logger.Error(err, "Failed to set providerID on CP node", "output", output)
 					} else {
-						logger.Info("Set providerID on workload cluster node", "node", hostname, "providerID", providerID)
+						logger.Info("Set providerID on CP node", "node", hostname, "providerID", providerID)
+					}
+				} else {
+					// Worker: patch via the workload cluster API using the kubeconfig secret
+					if err := r.patchNodeProviderID(ctx, cluster, hostname, providerID); err != nil {
+						logger.Error(err, "Failed to set providerID on worker node", "node", hostname)
+					} else {
+						logger.Info("Set providerID on worker node", "node", hostname, "providerID", providerID)
 					}
 				}
 			}
@@ -612,6 +621,50 @@ func (r *E2EMachineReconciler) getRawBootstrapData(ctx context.Context, machine 
 func (r *E2EMachineReconciler) machineFromE2EMachine(ctx context.Context, e2eMachine *infrav1.E2EMachine) *clusterv1.Machine {
 	machine, _ := util.GetOwnerMachine(ctx, r.Client, e2eMachine.ObjectMeta)
 	return machine
+}
+
+// patchNodeProviderID sets spec.providerID on a node in the workload cluster
+// using the kubeconfig secret that CAPI stores as "<cluster>-kubeconfig".
+func (r *E2EMachineReconciler) patchNodeProviderID(ctx context.Context, cluster *clusterv1.Cluster, nodeName, providerID string) error {
+	kubeconfigSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      fmt.Sprintf("%s-kubeconfig", cluster.Name),
+	}, kubeconfigSecret); err != nil {
+		return fmt.Errorf("getting workload kubeconfig secret: %w", err)
+	}
+
+	kubeconfigData, ok := kubeconfigSecret.Data["value"]
+	if !ok {
+		return fmt.Errorf("workload kubeconfig secret missing 'value' key")
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+	if err != nil {
+		return fmt.Errorf("parsing workload kubeconfig: %w", err)
+	}
+
+	workloadClient, err := client.New(restConfig, client.Options{Scheme: r.Scheme})
+	if err != nil {
+		return fmt.Errorf("creating workload cluster client: %w", err)
+	}
+
+	node := &corev1.Node{}
+	if err := workloadClient.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		return fmt.Errorf("getting node %s in workload cluster: %w", nodeName, err)
+	}
+
+	if node.Spec.ProviderID == providerID {
+		return nil // already set, nothing to do
+	}
+
+	base := node.DeepCopy()
+	node.Spec.ProviderID = providerID
+	if err := workloadClient.Patch(ctx, node, client.MergeFrom(base)); err != nil {
+		return fmt.Errorf("patching providerID on node %s: %w", nodeName, err)
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

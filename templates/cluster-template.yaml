@@ -52,20 +52,9 @@ spec:
       name: "${CLUSTER_NAME}-control-plane"
   kubeadmConfigSpec:
     initConfiguration:
-      nodeRegistration:
-        kubeletExtraArgs:
-          cloud-provider: external
+      nodeRegistration: {}
     joinConfiguration:
-      nodeRegistration:
-        kubeletExtraArgs:
-          cloud-provider: external
-    clusterConfiguration:
-      apiServer:
-        extraArgs:
-          cloud-provider: external
-      controllerManager:
-        extraArgs:
-          cloud-provider: external
+      nodeRegistration: {}
 ---
 # Control Plane Machine Template
 apiVersion: infrastructure.e2enetworks.com/v1beta1
@@ -134,6 +123,4 @@ spec:
   template:
     spec:
       joinConfiguration:
-        nodeRegistration:
-          kubeletExtraArgs:
-            cloud-provider: external
+        nodeRegistration: {}
