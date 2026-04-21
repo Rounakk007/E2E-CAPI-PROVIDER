@@ -208,7 +208,20 @@ func (c *Client) GetLoadBalancerRaw(ctx context.Context, lbID int, location stri
 	for _, a := range appliances {
 		id, ok := a["id"].(float64)
 		if ok && int(id) == lbID {
-			return a, nil
+			// The config we need is inside appliance_instance[0].context
+			instances, ok := a["appliance_instance"].([]interface{})
+			if !ok || len(instances) == 0 {
+				return nil, fmt.Errorf("load balancer %d has no appliance_instance", lbID)
+			}
+			instance, ok := instances[0].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("invalid appliance_instance format for LB %d", lbID)
+			}
+			context, ok := instance["context"].(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("invalid context format for LB %d", lbID)
+			}
+			return context, nil
 		}
 	}
 	return nil, ErrLoadBalancerNotFound
