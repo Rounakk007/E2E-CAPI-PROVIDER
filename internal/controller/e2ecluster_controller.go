@@ -211,7 +211,7 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 	lb, err := r.E2EClient.CreateLoadBalancer(ctx, cloud.CreateLoadBalancerRequest{
 		LBName:               lbName,
 		LBType:               "external",
-		LBMode:               "HTTP",
+		LBMode:               "TCP",
 		LBPort:               apiServerPortStr,
 		PlanName:             "E2E-LB-2",
 		NodeListType:         "D",

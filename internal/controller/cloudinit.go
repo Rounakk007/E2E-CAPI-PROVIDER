@@ -86,6 +86,12 @@ EOF
     systemctl restart containerd
     systemctl enable containerd
 
+    # Ensure containerd socket is available at the expected path
+    mkdir -p /var/run/containerd
+    if [ ! -S /var/run/containerd/containerd.sock ] && [ -S /run/containerd/containerd.sock ]; then
+        ln -sf /run/containerd/containerd.sock /var/run/containerd/containerd.sock
+    fi
+
     # Install kubeadm, kubelet, kubectl
     KUBE_VERSION="${KUBE_VERSION:-1.30}"
     curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${KUBE_VERSION}/deb/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
@@ -100,8 +106,12 @@ EOF
     echo "=== Kubernetes prerequisites installed ==="
 fi
 
-# Ensure containerd is running
+# Ensure containerd is running and socket is accessible
 systemctl start containerd
+mkdir -p /var/run/containerd
+if [ ! -S /var/run/containerd/containerd.sock ] && [ -S /run/containerd/containerd.sock ]; then
+    ln -sf /run/containerd/containerd.sock /var/run/containerd/containerd.sock
+fi
 `
 
 // CloudInitToScript converts cloud-init YAML to a bash script that:
@@ -167,8 +177,28 @@ func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error)
 	script.WriteString("else\n")
 	script.WriteString("    mkdir -p /run/cluster-api\n")
 	script.WriteString("    # Reset any partial kubeadm state from previous attempts\n")
-	script.WriteString("    kubeadm reset -f 2>/dev/null || true\n")
-	script.WriteString("    rm -rf /var/lib/etcd/*\n")
+	script.WriteString("    if [ -f /etc/kubernetes/manifests/kube-apiserver.yaml ]; then\n")
+	script.WriteString("        echo 'Cleaning up partial kubeadm state...'\n")
+	script.WriteString("        kubeadm reset -f 2>/dev/null || true\n")
+	script.WriteString("        rm -rf /var/lib/etcd/*\n")
+	script.WriteString("        # Re-write certificate files after reset\n")
+	for _, f := range config.WriteFiles {
+		if f.Path == "" || f.Content == "" {
+			continue
+		}
+		if strings.Contains(f.Path, "/etc/kubernetes/") {
+			dir := f.Path[:strings.LastIndex(f.Path, "/")]
+			script.WriteString(fmt.Sprintf("        mkdir -p '%s'\n", dir))
+			script.WriteString(fmt.Sprintf("        cat > '%s' << 'CAPI_RESET_EOF'\n%s\nCAPI_RESET_EOF\n", f.Path, f.Content))
+			if f.Permissions != "" {
+				script.WriteString(fmt.Sprintf("        chmod %s '%s'\n", f.Permissions, f.Path))
+			}
+			if f.Owner != "" {
+				script.WriteString(fmt.Sprintf("        chown %s '%s'\n", f.Owner, f.Path))
+			}
+		}
+	}
+	script.WriteString("    fi\n")
 	for _, cmd := range config.RunCmd {
 		switch v := cmd.(type) {
 		case string:
