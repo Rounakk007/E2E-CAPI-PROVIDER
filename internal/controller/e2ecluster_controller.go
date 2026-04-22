@@ -100,9 +100,11 @@ func (r *E2EClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				infrav1.LoadBalancerReadyCondition,
 			}},
 		); err != nil {
-			logger.Error(err, "failed to patch E2ECluster")
-			if retErr == nil {
-				retErr = err
+			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "failed to patch E2ECluster")
+				if retErr == nil {
+					retErr = err
+				}
 			}
 		}
 	}()
@@ -249,6 +251,13 @@ func (r *E2EClusterReconciler) reconcileDelete(ctx context.Context, e2eCluster *
 	// Delete the load balancer if it exists
 	if e2eCluster.Status.Network.LoadBalancerID != 0 {
 		logger.Info("Deleting API server load balancer", "id", e2eCluster.Status.Network.LoadBalancerID)
+
+		// Drain all backend servers first — the E2E API may reject deletion on a non-empty LB.
+		// This also handles cases where machine-side cleanup failed silently.
+		if err := r.E2EClient.ClearBackendServers(ctx, e2eCluster.Status.Network.LoadBalancerID, e2eCluster.Spec.Location); err != nil {
+			logger.V(1).Info("Could not clear LB backend servers before deletion", "error", err)
+		}
+
 		if err := r.E2EClient.DeleteLoadBalancer(ctx, e2eCluster.Status.Network.LoadBalancerID, e2eCluster.Spec.Location); err != nil {
 			if !errors.Is(err, cloud.ErrLoadBalancerNotFound) && !errors.Is(err, cloud.ErrNodeNotFound) {
 				conditions.MarkFalse(

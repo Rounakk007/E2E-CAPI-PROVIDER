@@ -132,9 +132,11 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 				infrav1.InstanceReadyCondition,
 			}},
 		); err != nil {
-			logger.Error(err, "failed to patch E2EMachine")
-			if retErr == nil {
-				retErr = err
+			if !apierrors.IsNotFound(err) {
+				logger.Error(err, "failed to patch E2EMachine")
+				if retErr == nil {
+					retErr = err
+				}
 			}
 		}
 	}()

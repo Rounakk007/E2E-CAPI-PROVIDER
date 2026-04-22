@@ -19,6 +19,7 @@ package cloud
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -341,6 +342,44 @@ func (c *Client) RemoveBackendServer(ctx context.Context, lbID int, backendIP st
 		}
 	}
 	group["servers"] = filtered
+
+	return c.UpdateLoadBalancer(ctx, lbID, config, location)
+}
+
+// ClearBackendServers removes all servers from every tcp_backend group of the
+// load balancer. This is called before DeleteLoadBalancer to ensure the E2E API
+// does not reject the delete request due to active backends.
+func (c *Client) ClearBackendServers(ctx context.Context, lbID int, location string) error {
+	config, err := c.GetLoadBalancerRaw(ctx, lbID, location)
+	if err != nil {
+		// If the LB is already gone, nothing to clear.
+		if errors.Is(err, ErrLoadBalancerNotFound) {
+			return nil
+		}
+		return fmt.Errorf("getting LB config for clear backends: %w", err)
+	}
+
+	tcpBackend, err := getTCPBackend(config)
+	if err != nil || len(tcpBackend) == 0 {
+		return nil
+	}
+
+	changed := false
+	for _, b := range tcpBackend {
+		group, ok := b.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		servers, _ := group["servers"].([]interface{})
+		if len(servers) > 0 {
+			group["servers"] = []interface{}{}
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
 
 	return c.UpdateLoadBalancer(ctx, lbID, config, location)
 }
