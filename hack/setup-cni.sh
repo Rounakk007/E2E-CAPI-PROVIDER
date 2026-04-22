@@ -29,8 +29,8 @@ case "${CNI}" in
     URL="https://raw.githubusercontent.com/projectcalico/calico/${VERSION}/manifests/calico.yaml"
     ;;
   cilium)
-    VERSION="${2:-${CNI_VERSION:-v1.15.0}}"
-    URL="https://raw.githubusercontent.com/cilium/cilium/${VERSION}/install/kubernetes/quick-install.yaml"
+    VERSION="${2:-${CNI_VERSION:-v1.16.0}}"
+    URL=""   # Cilium is installed via helm template, not a raw URL
     ;;
   flannel)
     VERSION="${2:-${CNI_VERSION:-v0.25.0}}"
@@ -43,7 +43,21 @@ case "${CNI}" in
 esac
 
 echo "==> Downloading ${CNI} ${VERSION}..."
-curl -fsSL "${URL}" -o "${TMPFILE}"
+if [[ "${CNI}" == "cilium" ]]; then
+  # Cilium dropped quick-install.yaml after v1.14 — use helm template instead.
+  if ! command -v helm &>/dev/null; then
+    echo "ERROR: helm is required to generate Cilium manifests. Install it first."
+    exit 1
+  fi
+  helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
+  helm repo update cilium 2>/dev/null
+  helm template cilium cilium/cilium \
+    --version "${VERSION#v}" \
+    --namespace kube-system \
+    > "${TMPFILE}"
+else
+  curl -fsSL "${URL}" -o "${TMPFILE}"
+fi
 echo "    Downloaded $(wc -l < "${TMPFILE}") lines"
 
 CONFIGMAP_NAME="${CNI}-cni"
