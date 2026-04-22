@@ -132,12 +132,6 @@ func (r *E2EClusterReconciler) reconcileNormal(ctx context.Context, e2eCluster *
 		return ctrl.Result{}, nil
 	}
 
-	// If the control plane endpoint is already set and cluster is ready, we're done
-	if e2eCluster.Status.Ready {
-		logger.V(1).Info("E2ECluster already ready")
-		return ctrl.Result{}, nil
-	}
-
 	// Reconcile the API server load balancer
 	if err := r.reconcileLoadBalancer(ctx, e2eCluster); err != nil {
 		conditions.MarkFalse(
