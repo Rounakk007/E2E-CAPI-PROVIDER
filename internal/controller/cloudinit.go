@@ -46,6 +46,16 @@ echo "=== Installing Kubernetes prerequisites ==="
 if command -v kubeadm &> /dev/null; then
     echo "kubeadm already installed, skipping prerequisites"
 else
+    # Stop unattended-upgrades and wait for dpkg lock — Ubuntu VMs run this at boot
+    systemctl stop unattended-upgrades 2>/dev/null || true
+    systemctl kill --kill-who=all unattended-upgrades 2>/dev/null || true
+    while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 \
+       || fuser /var/lib/apt/lists/lock >/dev/null 2>&1 \
+       || fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+        echo "Waiting for dpkg lock to be released..."
+        sleep 5
+    done
+
     # Disable swap
     swapoff -a
     sed -i '/swap/d' /etc/fstab
@@ -115,10 +125,11 @@ fi
 `
 
 // CloudInitToScript converts cloud-init YAML to a bash script that:
-// 1. Installs Kubernetes prerequisites (containerd, kubeadm, kubelet)
-// 2. Writes all files from write_files
-// 3. Executes all commands from runcmd
-func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error) {
+// 1. Sets the hostname to the machine name (prevents E2E hostname reuse conflicts)
+// 2. Installs Kubernetes prerequisites (containerd, kubeadm, kubelet)
+// 3. Writes all files from write_files
+// 4. Executes all commands from runcmd
+func CloudInitToScript(cloudInitData string, kubeVersion string, machineName string) (string, error) {
 	var config CloudInitConfig
 
 	// The cloud-init data may start with #cloud-config, strip it
@@ -130,6 +141,15 @@ func CloudInitToScript(cloudInitData string, kubeVersion string) (string, error)
 
 	var script strings.Builder
 	script.WriteString("#!/bin/bash\nset -e\nexport DEBIAN_FRONTEND=noninteractive\n\n")
+
+	// Set hostname to the CAPI machine name so each node gets a unique,
+	// stable hostname. This prevents E2E hostname reuse conflicts during
+	// rolling upgrades where a new VM might get the same OS hostname as a
+	// recently deleted node that still exists in the workload cluster.
+	if machineName != "" {
+		script.WriteString(fmt.Sprintf("hostnamectl set-hostname '%s'\n", machineName))
+		script.WriteString(fmt.Sprintf("echo '127.0.0.1 %s' >> /etc/hosts\n\n", machineName))
+	}
 
 	// Set Kubernetes version for the preinstall script
 	if kubeVersion != "" {

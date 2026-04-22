@@ -259,6 +259,16 @@ func (r *E2EMachineReconciler) createInstance(
 		subnetID = &empty
 	}
 
+	// Check if a VM with this name already exists — this handles the case where
+	// the VM was created but the status patch failed, leaving InstanceID unset.
+	// Without this check, the controller would create a duplicate VM on retry.
+	if existing, err := r.E2EClient.GetNodeByName(ctx, e2eMachine.Name, e2eMachine.Spec.Location); err == nil {
+		logger.Info("Found existing E2E node with same name, recovering", "nodeID", existing.ID)
+		e2eMachine.Status.InstanceID = &existing.ID
+		e2eMachine.Status.InstanceStatus = existing.Status
+		return ctrl.Result{RequeueAfter: requeueAfterLong}, nil
+	}
+
 	node, err := r.E2EClient.CreateNode(ctx, cloud.CreateNodeRequest{
 		Name:              e2eMachine.Name,
 		Plan:              e2eMachine.Spec.Plan,
@@ -435,7 +445,7 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			if machine.Spec.Version != nil {
 				kubeVersion = *machine.Spec.Version
 			}
-			bootstrapScript, err := CloudInitToScript(rawBootstrapData, kubeVersion)
+			bootstrapScript, err := CloudInitToScript(rawBootstrapData, kubeVersion, e2eMachine.Name)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("converting cloud-init to script: %w", err)
 			}
@@ -657,7 +667,21 @@ func (r *E2EMachineReconciler) patchNodeProviderID(ctx context.Context, cluster 
 	}
 
 	if node.Spec.ProviderID == providerID {
-		return nil // already set, nothing to do
+		return nil // already set correctly, nothing to do
+	}
+
+	// Kubernetes forbids changing providerID once set to a non-empty value.
+	// This can happen when E2E reuses a hostname for a new VM while the old
+	// node object (with a different providerID) still exists in the workload
+	// cluster during a rolling upgrade. Skip gracefully — the machine will
+	// still be marked Ready and the old node will be cleaned up by CAPI.
+	if node.Spec.ProviderID != "" {
+		log.FromContext(ctx).V(1).Info("Node already has a different providerID, skipping patch",
+			"node", nodeName,
+			"existing", node.Spec.ProviderID,
+			"wanted", providerID,
+		)
+		return nil
 	}
 
 	base := node.DeepCopy()

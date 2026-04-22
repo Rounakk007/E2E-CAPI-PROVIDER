@@ -178,6 +178,34 @@ func (c *Client) GetLoadBalancer(ctx context.Context, lbID int, location string)
 	return nil, ErrLoadBalancerNotFound
 }
 
+// GetLoadBalancerByName searches all appliances in the given location for one
+// whose name matches exactly. Returns ErrLoadBalancerNotFound if no match.
+// Used to recover an existing LB after a status-patch failure that left
+// LoadBalancerID unset, preventing duplicate LB creation on retry.
+func (c *Client) GetLoadBalancerByName(ctx context.Context, name string, location string) (*LoadBalancer, error) {
+	extra := map[string]string{}
+	if location != "" {
+		extra["location"] = location
+	}
+
+	data, err := c.doRequest(ctx, http.MethodGet, "/appliances/", nil, extra)
+	if err != nil {
+		return nil, fmt.Errorf("listing appliances: %w", err)
+	}
+
+	var appliances []LoadBalancer
+	if err := parseResponse(data, &appliances); err != nil {
+		return nil, fmt.Errorf("parsing appliances response: %w", err)
+	}
+
+	for i := range appliances {
+		if appliances[i].Name == name {
+			return &appliances[i], nil
+		}
+	}
+	return nil, ErrLoadBalancerNotFound
+}
+
 // GetLoadBalancerRaw retrieves the full raw JSON config of a load balancer.
 // This is needed for update operations (add/remove backend) since the API
 // requires a full PUT of the entire LB config.

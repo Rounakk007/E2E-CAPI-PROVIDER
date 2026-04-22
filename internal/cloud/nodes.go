@@ -168,6 +168,23 @@ func (c *Client) ListNodes(ctx context.Context, location string, pageNo int, per
 	return nodes, nil
 }
 
+// GetNodeByName searches all nodes in the given location for one whose name
+// matches exactly. Returns ErrNodeNotFound if no match is found. This is used
+// to recover an existing VM after a status-patch failure that caused the
+// InstanceID to not be persisted, preventing duplicate VM creation on retry.
+func (c *Client) GetNodeByName(ctx context.Context, name string, location string) (*Node, error) {
+	nodes, err := c.ListNodes(ctx, location, 0, 0)
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes for name lookup: %w", err)
+	}
+	for i := range nodes {
+		if nodes[i].Name == name {
+			return &nodes[i], nil
+		}
+	}
+	return nil, ErrNodeNotFound
+}
+
 // DeleteNode deletes a node by ID.
 func (c *Client) DeleteNode(ctx context.Context, nodeID int, location string) error {
 	extra := map[string]string{

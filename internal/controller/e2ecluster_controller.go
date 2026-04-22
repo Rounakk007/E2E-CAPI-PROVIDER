@@ -201,6 +201,16 @@ func (r *E2EClusterReconciler) reconcileLoadBalancer(ctx context.Context, e2eClu
 		lbName = e2eCluster.Spec.LoadBalancer.Name
 	}
 
+	// Check if an LB with this name already exists — handles the case where the
+	// LB was created but the status patch failed, leaving LoadBalancerID unset.
+	// Without this check, a duplicate LB would be created on every retry.
+	if existing, err := r.E2EClient.GetLoadBalancerByName(ctx, lbName, location); err == nil {
+		logger.Info("Found existing load balancer with same name, recovering", "id", existing.ID)
+		e2eCluster.Status.Network.LoadBalancerID = existing.ID
+		e2eCluster.Status.Network.APIServerIP = existing.GetPublicIP()
+		return nil
+	}
+
 	logger.Info("Creating API server load balancer", "name", lbName)
 
 	apiServerPortStr := fmt.Sprintf("%d", apiServerPort)
