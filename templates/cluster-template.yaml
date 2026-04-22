@@ -5,6 +5,8 @@ kind: Cluster
 metadata:
   name: "${CLUSTER_NAME}"
   namespace: "${NAMESPACE}"
+  labels:
+    cni: "${CNI_NAME}"
 spec:
   clusterNetwork:
     pods:

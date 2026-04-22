@@ -1,0 +1,21 @@
+---
+# This file is a reference template.
+# Use hack/setup-cni.sh to generate and apply ClusterResourceSets
+# for specific CNIs (calico, cilium, flannel).
+#
+# Example for Calico:
+#   bash hack/setup-cni.sh calico
+#
+# Example for Cilium:
+#   bash hack/setup-cni.sh cilium
+#
+# The script creates both the ConfigMap (with the CNI manifest)
+# and the ClusterResourceSet (which watches for clusters with the matching label).
+#
+# Cluster label controls which CNI gets installed:
+#   cni: calico   → installs Calico
+#   cni: cilium   → installs Cilium
+#   cni: flannel  → installs Flannel
+#
+# The cluster template already has "cni: calico" set by default.
+# Change the label in the template or on the Cluster object to switch CNI.
