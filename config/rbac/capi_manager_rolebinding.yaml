@@ -8,7 +8,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: capi-aggregated-manager-role
+  name: e2e-infrastructure-aggregate-role
 subjects:
   - kind: ServiceAccount
     name: capi-manager

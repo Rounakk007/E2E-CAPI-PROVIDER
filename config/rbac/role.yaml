@@ -88,11 +88,14 @@ rules:
       - list
       - watch
 ---
-# ClusterRole aggregation label so CAPI core controller can manage our resources
+# This ClusterRole carries the aggregation label so it gets automatically merged
+# into CAPI's capi-aggregated-manager-role (which uses label-based aggregation).
+# It must have a DIFFERENT name from capi-aggregated-manager-role — otherwise
+# it conflicts with the role CAPI itself manages.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: capi-aggregated-manager-role
+  name: e2e-infrastructure-aggregate-role
   labels:
     cluster.x-k8s.io/aggregate-to-manager: "true"
 rules:
