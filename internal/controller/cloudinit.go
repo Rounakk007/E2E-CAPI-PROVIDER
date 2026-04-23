@@ -201,6 +201,12 @@ func CloudInitToScript(cloudInitData string, kubeVersion string, machineName str
 	script.WriteString("        echo 'Cleaning up partial kubeadm state...'\n")
 	script.WriteString("        kubeadm reset -f 2>/dev/null || true\n")
 	script.WriteString("        rm -rf /var/lib/etcd/*\n")
+	script.WriteString("        # Wait for the LB health check to propagate the new backend before\n")
+	script.WriteString("        # retrying kubeadm init. Without this, kubeadm's upload-config phase\n")
+	script.WriteString("        # hits the LB endpoint too quickly after the API server starts and\n")
+	script.WriteString("        # gets EOF/timeout because the LB hasn't yet marked the backend healthy.\n")
+	script.WriteString("        echo 'Waiting 30s for LB health check to propagate before retry...'\n")
+	script.WriteString("        sleep 30\n")
 	script.WriteString("        # Re-write certificate files after reset\n")
 	for _, f := range config.WriteFiles {
 		if f.Path == "" || f.Content == "" {
