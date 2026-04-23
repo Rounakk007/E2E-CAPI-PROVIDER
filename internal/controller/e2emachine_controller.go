@@ -112,6 +112,11 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		Name:      cluster.Spec.InfrastructureRef.Name,
 	}
 	if err := r.Get(ctx, e2eClusterName, e2eCluster); err != nil {
+		if apierrors.IsNotFound(err) && !e2eMachine.DeletionTimestamp.IsZero() {
+			// E2ECluster is already deleted — still need to delete the VM.
+			// LB deregistration will be skipped (LoadBalancerID == 0).
+			return r.reconcileDelete(ctx, e2eMachine, e2eCluster)
+		}
 		logger.Info("E2ECluster not yet available")
 		return ctrl.Result{}, nil
 	}
