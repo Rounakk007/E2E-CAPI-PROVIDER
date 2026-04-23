@@ -105,23 +105,9 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	logger = logger.WithValues("cluster", cluster.Name)
 
-	// Fetch the E2ECluster
-	e2eCluster := &infrav1.E2ECluster{}
-	e2eClusterName := types.NamespacedName{
-		Namespace: e2eMachine.Namespace,
-		Name:      cluster.Spec.InfrastructureRef.Name,
-	}
-	if err := r.Get(ctx, e2eClusterName, e2eCluster); err != nil {
-		if apierrors.IsNotFound(err) && !e2eMachine.DeletionTimestamp.IsZero() {
-			// E2ECluster is already deleted — still need to delete the VM.
-			// LB deregistration will be skipped (LoadBalancerID == 0).
-			return r.reconcileDelete(ctx, e2eMachine, e2eCluster)
-		}
-		logger.Info("E2ECluster not yet available")
-		return ctrl.Result{}, nil
-	}
-
-	// Initialize the patch helper
+	// Initialize the patch helper before any early-return paths so the defer
+	// always persists finalizer removal and status changes regardless of which
+	// code path is taken (e.g. E2ECluster already deleted during machine deletion).
 	patchHelper, err := patch.NewHelper(e2eMachine, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -145,6 +131,23 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 		}
 	}()
+
+	// Fetch the E2ECluster
+	e2eCluster := &infrav1.E2ECluster{}
+	e2eClusterName := types.NamespacedName{
+		Namespace: e2eMachine.Namespace,
+		Name:      cluster.Spec.InfrastructureRef.Name,
+	}
+	if err := r.Get(ctx, e2eClusterName, e2eCluster); err != nil {
+		if apierrors.IsNotFound(err) && !e2eMachine.DeletionTimestamp.IsZero() {
+			// E2ECluster is already deleted — still need to delete the VM.
+			// LB deregistration will be skipped (LoadBalancerID == 0).
+			// The patch helper defer above will persist the finalizer removal.
+			return r.reconcileDelete(ctx, e2eMachine, e2eCluster)
+		}
+		logger.Info("E2ECluster not yet available")
+		return ctrl.Result{}, nil
+	}
 
 	// Handle paused clusters
 	if annotations.IsPaused(cluster, e2eMachine) {
