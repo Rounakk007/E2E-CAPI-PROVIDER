@@ -84,30 +84,9 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	// Fetch the owning Machine
-	machine, err := util.GetOwnerMachine(ctx, r.Client, e2eMachine.ObjectMeta)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if machine == nil {
-		logger.Info("Waiting for Machine controller to set OwnerRef on E2EMachine")
-		return ctrl.Result{}, nil
-	}
-
-	logger = logger.WithValues("machine", machine.Name)
-
-	// Fetch the Cluster
-	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, machine.ObjectMeta)
-	if err != nil {
-		logger.Info("E2EMachine owner Machine is missing Cluster label or Cluster does not exist")
-		return ctrl.Result{}, err
-	}
-
-	logger = logger.WithValues("cluster", cluster.Name)
-
-	// Initialize the patch helper before any early-return paths so the defer
-	// always persists finalizer removal and status changes regardless of which
-	// code path is taken (e.g. E2ECluster already deleted during machine deletion).
+	// Initialize the patch helper immediately after fetching E2EMachine so the
+	// defer below always persists finalizer removal and status changes regardless
+	// of which early-return path is taken.
 	patchHelper, err := patch.NewHelper(e2eMachine, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -131,6 +110,32 @@ func (r *E2EMachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			}
 		}
 	}()
+
+	// Fetch the owning Machine
+	machine, err := util.GetOwnerMachine(ctx, r.Client, e2eMachine.ObjectMeta)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Owner Machine is gone — remove finalizer so this E2EMachine can be GC'd.
+			controllerutil.RemoveFinalizer(e2eMachine, infrav1.MachineFinalizer)
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	if machine == nil {
+		logger.Info("Waiting for Machine controller to set OwnerRef on E2EMachine")
+		return ctrl.Result{}, nil
+	}
+
+	logger = logger.WithValues("machine", machine.Name)
+
+	// Fetch the Cluster
+	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, machine.ObjectMeta)
+	if err != nil {
+		logger.Info("E2EMachine owner Machine is missing Cluster label or Cluster does not exist")
+		return ctrl.Result{}, err
+	}
+
+	logger = logger.WithValues("cluster", cluster.Name)
 
 	// Fetch the E2ECluster
 	e2eCluster := &infrav1.E2ECluster{}
