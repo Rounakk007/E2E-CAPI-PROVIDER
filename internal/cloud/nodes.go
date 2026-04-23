@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // Node represents an E2E Cloud compute node.
@@ -133,6 +134,11 @@ func (c *Client) GetNode(ctx context.Context, nodeID int, location string) (*Nod
 
 	data, err := c.doRequest(ctx, http.MethodGet, fmt.Sprintf("/nodes/%d/", nodeID), nil, extra)
 	if err != nil {
+		// E2E API returns 400 Bad Request for GET requests on deleted nodes
+		// instead of the standard 404 Not Found. Treat it as ErrNodeNotFound.
+		if strings.Contains(err.Error(), "status=400") {
+			return nil, ErrNodeNotFound
+		}
 		return nil, fmt.Errorf("getting node %d: %w", nodeID, err)
 	}
 
