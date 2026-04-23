@@ -205,8 +205,8 @@ func CloudInitToScript(cloudInitData string, kubeVersion string, machineName str
 	script.WriteString("        # retrying kubeadm init. Without this, kubeadm's upload-config phase\n")
 	script.WriteString("        # hits the LB endpoint too quickly after the API server starts and\n")
 	script.WriteString("        # gets EOF/timeout because the LB hasn't yet marked the backend healthy.\n")
-	script.WriteString("        echo 'Waiting 30s for LB health check to propagate before retry...'\n")
-	script.WriteString("        sleep 30\n")
+	script.WriteString("        echo 'Waiting 90s for LB health check to propagate before retry...'\n")
+	script.WriteString("        sleep 90\n")
 	script.WriteString("        # Re-write certificate files after reset\n")
 	for _, f := range config.WriteFiles {
 		if f.Path == "" || f.Content == "" {
@@ -226,9 +226,10 @@ func CloudInitToScript(cloudInitData string, kubeVersion string, machineName str
 	}
 	script.WriteString("    fi\n")
 	for _, cmd := range config.RunCmd {
+		var cmdStr string
 		switch v := cmd.(type) {
 		case string:
-			script.WriteString("    " + v + "\n")
+			cmdStr = v
 		case []interface{}:
 			parts := make([]string, 0, len(v))
 			for _, p := range v {
@@ -236,7 +237,31 @@ func CloudInitToScript(cloudInitData string, kubeVersion string, machineName str
 					parts = append(parts, s)
 				}
 			}
-			script.WriteString("    " + strings.Join(parts, " ") + "\n")
+			cmdStr = strings.Join(parts, " ")
+		}
+
+		// For kubeadm init, skip the upload-config phase so we can wait for the
+		// LB health check to propagate after the API server starts. The LB marks
+		// the backend unhealthy while the API server is down (during package
+		// installation). Once the API server starts, the LB needs one health-check
+		// cycle before it will forward traffic — running upload-config immediately
+		// causes EOF. We sleep 60s after init, then run upload-config separately.
+		if strings.Contains(cmdStr, "kubeadm init") {
+			// Extract --config path (default is the CAPI kubeadm bootstrap path)
+			configPath := "/run/kubeadm/kubeadm.yaml"
+			if idx := strings.Index(cmdStr, "--config "); idx >= 0 {
+				rest := cmdStr[idx+9:]
+				if fields := strings.Fields(rest); len(fields) > 0 {
+					configPath = fields[0]
+				}
+			}
+			skipCmd := strings.Replace(cmdStr, "kubeadm init", "kubeadm init --skip-phases=upload-config", 1)
+			script.WriteString("    " + skipCmd + "\n")
+			script.WriteString("    echo 'API server started; waiting 60s for LB health check to mark backend healthy...'\n")
+			script.WriteString("    sleep 60\n")
+			script.WriteString(fmt.Sprintf("    kubeadm init phase upload-config all --config %s\n", configPath))
+		} else {
+			script.WriteString("    " + cmdStr + "\n")
 		}
 	}
 	script.WriteString("fi\n")
