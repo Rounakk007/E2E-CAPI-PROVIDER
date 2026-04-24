@@ -10,5 +10,5 @@ spec:
   # Replace with your actual chart server URL.
   # For local testing: http://<management-vm-ip>:8888
   # For GitHub Pages: https://<user>.github.io/<repo>/helm
-  url: http://REPLACE_WITH_CHART_SERVER_URL
+  url: http://164.52.204.151:8888
   interval: 5m0s
