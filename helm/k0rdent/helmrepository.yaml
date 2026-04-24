@@ -1,11 +1,13 @@
 ---
 # HelmRepository tells k0rdent (via Flux) where to find our Helm charts.
 # Update the URL to wherever you're hosting the charts (local HTTP server or GitHub Pages).
-apiVersion: source.toolkit.fluxcd.io/v1beta2
+apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
   name: e2e-provider-charts
   namespace: kcm-system
+  labels:
+    k0rdent.mirantis.com/managed: "true"
 spec:
   # Replace with your actual chart server URL.
   # For local testing: http://<management-vm-ip>:8888
