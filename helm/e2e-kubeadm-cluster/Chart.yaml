@@ -1,0 +1,13 @@
+apiVersion: v2
+name: e2e-kubeadm-cluster
+description: Cluster blueprint for E2E Networks kubeadm-based clusters
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cluster-api
+  - e2e-networks
+  - kubeadm
+home: https://github.com/e2enetworks/cluster-api-provider-e2e
+sources:
+  - https://github.com/e2enetworks/cluster-api-provider-e2e

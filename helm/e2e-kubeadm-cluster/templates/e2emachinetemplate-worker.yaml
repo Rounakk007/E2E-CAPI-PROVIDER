@@ -1,0 +1,16 @@
+apiVersion: infrastructure.e2enetworks.com/v1beta1
+kind: E2EMachineTemplate
+metadata:
+  name: {{ .Values.clusterName }}-md-0
+  namespace: {{ .Values.namespace }}
+spec:
+  template:
+    spec:
+      plan: {{ .Values.worker.plan | quote }}
+      image: {{ .Values.worker.image | quote }}
+      location: {{ .Values.worker.location | quote }}
+      enablePublicIP: {{ .Values.worker.enablePublicIP }}
+      sshKeys:
+        {{- range .Values.sshKeys }}
+        - {{ . | quote }}
+        {{- end }}

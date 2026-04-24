@@ -1,0 +1,16 @@
+apiVersion: infrastructure.e2enetworks.com/v1beta1
+kind: E2EMachineTemplate
+metadata:
+  name: {{ .Values.clusterName }}-control-plane
+  namespace: {{ .Values.namespace }}
+spec:
+  template:
+    spec:
+      plan: {{ .Values.controlPlane.plan | quote }}
+      image: {{ .Values.controlPlane.image | quote }}
+      location: {{ .Values.controlPlane.location | quote }}
+      enablePublicIP: {{ .Values.controlPlane.enablePublicIP }}
+      sshKeys:
+        {{- range .Values.sshKeys }}
+        - {{ . | quote }}
+        {{- end }}

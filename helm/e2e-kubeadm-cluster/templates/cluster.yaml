@@ -1,0 +1,26 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    cni: {{ .Values.cniName }}
+    {{- range $k, $v := .Values.clusterLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - {{ .Values.network.podCIDR | quote }}
+    services:
+      cidrBlocks:
+        - {{ .Values.network.serviceCIDR | quote }}
+  infrastructureRef:
+    apiVersion: infrastructure.e2enetworks.com/v1beta1
+    kind: E2ECluster
+    name: {{ .Values.clusterName }}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: KubeadmControlPlane
+    name: {{ .Values.clusterName }}-control-plane

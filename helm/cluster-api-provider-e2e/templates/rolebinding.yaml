@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cape2e-leader-election-rolebinding
+  namespace: cape2e-system
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cape2e-leader-election-role
+subjects:
+  - kind: ServiceAccount
+    name: cape2e-controller-manager
+    namespace: cape2e-system

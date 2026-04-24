@@ -1,0 +1,12 @@
+apiVersion: infrastructure.e2enetworks.com/v1beta1
+kind: E2ECluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  region: {{ .Values.region | quote }}
+  location: {{ .Values.location | quote }}
+  network:
+    vpcID: {{ .Values.network.vpcID | quote }}
+  loadBalancer:
+    securityGroupID: {{ .Values.loadBalancer.securityGroupID }}

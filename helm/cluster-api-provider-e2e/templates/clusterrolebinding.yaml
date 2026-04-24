@@ -1,0 +1,31 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cape2e-manager-rolebinding
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cape2e-manager-role
+subjects:
+  - kind: ServiceAccount
+    name: cape2e-controller-manager
+    namespace: cape2e-system
+---
+# Allow CAPI's manager to manage E2E infrastructure resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cape2e-capi-manager-infra
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cape2e-infrastructure-aggregate-role
+subjects:
+  - kind: ServiceAccount
+    name: capi-manager
+    namespace: capi-system

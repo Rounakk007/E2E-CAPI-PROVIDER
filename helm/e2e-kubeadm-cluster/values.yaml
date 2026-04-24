@@ -1,0 +1,43 @@
+# Cluster identity
+clusterName: my-e2e-cluster
+namespace: default
+
+# Kubernetes version to install
+kubernetesVersion: v1.33.0
+
+# Labels applied to the Cluster object (used by MultiClusterService selectors)
+clusterLabels: {}
+
+# CNI label — a ClusterResourceSet must exist for the selected CNI
+cniName: cilium
+
+# Control plane configuration
+controlPlane:
+  count: 1
+  plan: C3.8GB
+  image: Ubuntu-24.04-Distro
+  location: Delhi
+  enablePublicIP: true
+
+# Worker node configuration
+worker:
+  count: 1
+  plan: C2-12GB
+  image: Ubuntu-24.04-Distro
+  location: Delhi
+  enablePublicIP: true
+
+# E2E Cloud region and network
+region: ncr
+location: Delhi
+network:
+  vpcID: ""
+  podCIDR: 10.244.0.0/16
+  serviceCIDR: 10.96.0.0/12
+
+# Load balancer configuration
+loadBalancer:
+  securityGroupID: 0
+
+# SSH public keys to inject into all nodes
+sshKeys: []

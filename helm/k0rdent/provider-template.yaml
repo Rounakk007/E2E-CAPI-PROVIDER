@@ -1,0 +1,22 @@
+---
+# ProviderTemplate registers the E2E Networks infrastructure provider with k0rdent.
+# k0rdent will install this provider via Helm when it's referenced in a ClusterTemplate.
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ProviderTemplate
+metadata:
+  name: cluster-api-provider-e2e-0-1-0
+  namespace: kcm-system
+spec:
+  providers:
+    - infrastructure-e2e
+  capiContracts:
+    v1beta1: v1beta1
+  helm:
+    chartSpec:
+      chart: cluster-api-provider-e2e
+      version: 0.1.0
+      interval: 10m0s
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: e2e-provider-charts

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: cluster-api-provider-e2e
+description: Cluster API Infrastructure Provider for E2E Networks
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cluster-api
+  - e2e-networks
+  - infrastructure-provider
+home: https://github.com/e2enetworks/cluster-api-provider-e2e
+sources:
+  - https://github.com/e2enetworks/cluster-api-provider-e2e
+annotations:
+  cluster.x-k8s.io/provider: infrastructure-e2e
+  cluster.x-k8s.io/version: v1.10.x

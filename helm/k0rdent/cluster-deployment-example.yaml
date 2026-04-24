@@ -1,0 +1,57 @@
+---
+# Example ClusterDeployment — this is the SINGLE object a user applies to get a full cluster.
+# Compare to the raw CAPI approach which required 7+ separate objects.
+#
+# The spec.config section maps 1:1 to the e2e-kubeadm-cluster Helm chart values.yaml.
+# Adjust all values marked with <REPLACE> before applying.
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ClusterDeployment
+metadata:
+  name: my-e2e-cluster
+  namespace: kcm-system
+spec:
+  # ClusterTemplate to use as the blueprint
+  template: e2e-kubeadm-0-1-0
+
+  # Credential object that holds E2E Cloud API keys
+  credential: e2e-credential
+
+  # Helm values passed to the e2e-kubeadm-cluster chart
+  config:
+    clusterName: my-e2e-cluster
+    namespace: kcm-system
+    kubernetesVersion: v1.33.0
+
+    # Labels applied to the Cluster — used by MultiClusterService selectors
+    clusterLabels:
+      env: dev
+      team: platform
+
+    cniName: cilium
+
+    controlPlane:
+      count: 1
+      plan: C3.8GB
+      image: Ubuntu-24.04-Distro
+      location: Delhi
+      enablePublicIP: true
+
+    worker:
+      count: 1
+      plan: C2-12GB
+      image: Ubuntu-24.04-Distro
+      location: Delhi
+      enablePublicIP: true
+
+    region: ncr
+    location: Delhi
+    network:
+      vpcID: "<REPLACE: your VPC ID>"
+      podCIDR: 10.244.0.0/16
+      serviceCIDR: 10.96.0.0/12
+
+    loadBalancer:
+      securityGroupID: <REPLACE: your security group ID>
+
+    sshKeys:
+      - "<REPLACE: your SSH public key>"

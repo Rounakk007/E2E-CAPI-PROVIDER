@@ -1,0 +1,145 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: e2eclusters.infrastructure.e2enetworks.com
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  labels:
+    cluster.x-k8s.io/v1beta1: v1beta1
+spec:
+  group: infrastructure.e2enetworks.com
+  names:
+    kind: E2ECluster
+    listKind: E2EClusterList
+    plural: e2eclusters
+    singular: e2ecluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .status.network.apiServerIP
+      name: APIServer-IP
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: E2ECluster is the Schema for the e2eclusters API.
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: E2EClusterSpec defines the desired state of E2ECluster.
+            properties:
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
+                properties:
+                  host:
+                    description: The hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: The port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+              loadBalancer:
+                description: LoadBalancer configuration for the API server load balancer.
+                properties:
+                  id:
+                    description: ID of an existing load balancer to use.
+                    type: integer
+                  name:
+                    description: Name override for the load balancer. Defaults to <cluster>-apiserver-lb.
+                    type: string
+                  securityGroupID:
+                    description: SecurityGroupID to attach to the load balancer.
+                    type: integer
+                type: object
+              location:
+                description: Location is the E2E Cloud location name (e.g., "Delhi").
+                type: string
+              network:
+                description: Network configuration for the cluster.
+                properties:
+                  vpcID:
+                    description: VPCID is the VPC in which cluster resources will be placed.
+                    type: string
+                type: object
+              region:
+                description: Region is the E2E Cloud region identifier (e.g., "ncr").
+                type: string
+            required:
+            - region
+            type: object
+          status:
+            description: E2EClusterStatus defines the observed state of E2ECluster.
+            properties:
+              conditions:
+                description: Conditions defines current service state of the E2ECluster.
+                items:
+                  description: Condition defines an observation of a Cluster API resource operational state.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human readable message indicating details about the transition.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition in CamelCase.
+                      type: string
+                    severity:
+                      description: Severity provides an explicit classification of Reason code.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type of condition in CamelCase.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              failureMessage:
+                description: FailureMessage will be set in case of a terminal problem reconciling the E2ECluster.
+                type: string
+              failureReason:
+                description: FailureReason will be set in case of a terminal problem reconciling the E2ECluster.
+                type: string
+              network:
+                description: Network holds the current network resource status.
+                properties:
+                  apiServerIP:
+                    description: APIServerIP is the public IP of the API server load balancer.
+                    type: string
+                  loadBalancerID:
+                    description: LoadBalancerID is the ID of the API server load balancer.
+                    type: integer
+                  vpcID:
+                    description: VPCID is the VPC ID.
+                    type: string
+                type: object
+              ready:
+                description: Ready denotes that the cluster infrastructure is fully provisioned.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

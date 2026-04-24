@@ -1,0 +1,39 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cape2e-manager-role
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-e2e
+rules:
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["clusters", "clusters/status", "machines", "machines/status"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["infrastructure.e2enetworks.com"]
+    resources: ["e2eclusters", "e2eclustertemplates", "e2emachines", "e2emachinetemplates"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["infrastructure.e2enetworks.com"]
+    resources: ["e2eclusters/status", "e2emachines/status"]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: ["infrastructure.e2enetworks.com"]
+    resources: ["e2eclusters/finalizers", "e2emachines/finalizers"]
+    verbs: ["update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+---
+# Aggregated role — automatically merged into CAPI's capi-aggregated-manager-role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cape2e-infrastructure-aggregate-role
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-e2e
+    cluster.x-k8s.io/aggregate-to-manager: "true"
+rules:
+  - apiGroups: ["infrastructure.e2enetworks.com"]
+    resources: ["e2eclusters", "e2eclustertemplates", "e2emachines", "e2emachinetemplates"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["infrastructure.e2enetworks.com"]
+    resources: ["e2eclusters/status", "e2emachines/status"]
+    verbs: ["get", "patch", "update"]

@@ -1,0 +1,26 @@
+# Controller image
+image:
+  repository: e2enetworks/cluster-api-provider-e2e
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Number of controller replicas
+replicaCount: 1
+
+# Name of the pre-existing Secret holding E2E Cloud credentials.
+# Must contain keys: api-key, auth-token, project-id
+# Create with:
+#   kubectl create secret generic e2e-credentials -n cape2e-system \
+#     --from-literal=api-key=<key> \
+#     --from-literal=auth-token=<token> \
+#     --from-literal=project-id=<id>
+credentialsSecretName: e2e-credentials
+
+# Resource limits for the controller pod
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi

@@ -1,0 +1,28 @@
+---
+# ClusterTemplate defines a reusable cluster blueprint backed by our e2e-kubeadm-cluster Helm chart.
+# Users reference this template by name in their ClusterDeployment objects.
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ClusterTemplate
+metadata:
+  name: e2e-kubeadm-0-1-0
+  namespace: kcm-system
+spec:
+  # Kubernetes version this template targets
+  k8sVersion: "1.33.0"
+  providers:
+    - bootstrap-kubeadm
+    - control-plane-kubeadm
+    - infrastructure-e2e
+  providerContracts:
+    bootstrap-kubeadm: v1beta1
+    control-plane-kubeadm: v1beta1
+    infrastructure-e2e: v1beta1
+  helm:
+    chartSpec:
+      chart: e2e-kubeadm-cluster
+      version: 0.1.0
+      interval: 10m0s
+      reconcileStrategy: ChartVersion
+      sourceRef:
+        kind: HelmRepository
+        name: e2e-provider-charts
