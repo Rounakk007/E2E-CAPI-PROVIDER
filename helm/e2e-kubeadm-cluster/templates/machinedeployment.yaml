@@ -15,8 +15,8 @@ spec:
       bootstrap:
         configRef:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
-          kind: KubeadmConfigTemplate
-          name: {{ .Values.clusterName }}-md-0
+          kind: K0sWorkerConfigTemplate
+          name: {{ .Values.clusterName }}-worker-config
       infrastructureRef:
         apiVersion: infrastructure.e2enetworks.com/v1beta1
         kind: E2EMachineTemplate

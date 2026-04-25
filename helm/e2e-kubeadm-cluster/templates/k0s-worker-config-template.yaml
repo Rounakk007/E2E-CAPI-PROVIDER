@@ -1,0 +1,9 @@
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+kind: K0sWorkerConfigTemplate
+metadata:
+  name: {{ .Values.clusterName }}-worker-config
+  namespace: {{ .Values.namespace }}
+spec:
+  template:
+    spec:
+      version: {{ .Values.k0s.version | quote }}

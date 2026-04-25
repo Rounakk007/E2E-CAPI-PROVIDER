@@ -11,7 +11,7 @@ metadata:
   namespace: kcm-system
 spec:
   # ClusterTemplate to use as the blueprint
-  template: e2e-kubeadm-0-1-0
+  template: e2e-k0s-0-2-0
 
   # Credential object that holds E2E Cloud API keys
   credential: e2e-credential

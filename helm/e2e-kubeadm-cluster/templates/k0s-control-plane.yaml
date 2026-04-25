@@ -1,0 +1,25 @@
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: K0sControlPlane
+metadata:
+  name: {{ .Values.clusterName }}-control-plane
+  namespace: {{ .Values.namespace }}
+spec:
+  replicas: {{ .Values.controlPlane.count }}
+  version: {{ .Values.k0s.version | quote }}
+  k0sConfigSpec:
+    k0s:
+      apiVersion: k0s.k0sproject.io/v1beta1
+      kind: ClusterConfig
+      metadata:
+        name: k0s
+      spec:
+        network:
+          podCIDR: {{ .Values.network.podCIDR | quote }}
+          serviceCIDR: {{ .Values.network.serviceCIDR | quote }}
+          provider: {{ .Values.k0s.network.provider | quote }}
+  machineTemplate:
+    infrastructureRef:
+      apiVersion: infrastructure.e2enetworks.com/v1beta1
+      kind: E2EMachineTemplate
+      name: {{ .Values.clusterName }}-control-plane
+      namespace: {{ .Values.namespace }}

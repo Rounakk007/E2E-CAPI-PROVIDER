@@ -1,15 +1,20 @@
 # Cluster identity
 clusterName: my-e2e-cluster
-namespace: default
+namespace: kcm-system
 
-# Kubernetes version to install
+# Kubernetes version (used for MachineDeployment spec.template.spec.version)
 kubernetesVersion: v1.33.0
+
+# k0s configuration
+k0s:
+  # Full k0s version string: Kubernetes version + k0s build suffix
+  version: v1.33.0+k0s.0
+  network:
+    # Built-in CNI: calico (default), kuberouter. Use 'custom' for external CNI.
+    provider: calico
 
 # Labels applied to the Cluster object (used by MultiClusterService selectors)
 clusterLabels: {}
-
-# CNI label — a ClusterResourceSet must exist for the selected CNI
-cniName: cilium
 
 # Control plane configuration
 controlPlane:

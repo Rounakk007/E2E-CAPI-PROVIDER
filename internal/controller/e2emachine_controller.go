@@ -389,9 +389,8 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 		)
 
 		// Step 1: Register CP node with LB BEFORE bootstrap
-		// This must happen first because kubeadm init needs the API server
-		// reachable through the LB (kubelet connects via the LB IP).
-		if util.IsControlPlaneMachine(r.machineFromE2EMachine(ctx, e2eMachine)) {
+		// This must happen first so the API server is reachable through the LB.
+		if util.IsControlPlaneMachine(machine) {
 			if e2eCluster.Status.Network.LoadBalancerID != 0 && node.PrivateIPAddress != "" {
 				logger.Info("Registering control plane node with LB before bootstrap")
 				if err := r.E2EClient.AddBackendServer(
@@ -492,9 +491,11 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			hostname = strings.TrimSpace(hostname)
 			if hostname != "" {
 				if util.IsControlPlaneMachine(machine) {
-					// CP: patch via SSH using the local admin.conf
+					// CP: patch via SSH — try k0s kubeconfig path first, fall back to kubeadm.
+					// k0s: /var/lib/k0s/pki/admin.conf
+					// kubeadm: /etc/kubernetes/admin.conf
 					patchCmd := fmt.Sprintf(
-						`kubectl --kubeconfig /etc/kubernetes/admin.conf patch node %s -p '{"spec":{"providerID":"%s"}}'`,
+						`for f in /var/lib/k0s/pki/admin.conf /etc/kubernetes/admin.conf; do [ -f "$f" ] && kubectl --kubeconfig "$f" patch node %s -p '{"spec":{"providerID":"%s"}}' && break; done`,
 						hostname, providerID,
 					)
 					if output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, patchCmd); err != nil {

@@ -1,13 +1,14 @@
 apiVersion: v2
-name: e2e-kubeadm-cluster
-description: Cluster blueprint for E2E Networks kubeadm-based clusters
+name: e2e-k0s-cluster
+description: Cluster blueprint for E2E Networks k0s standalone clusters (k0smotron control plane)
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.2.0
+appVersion: "0.2.0"
 keywords:
   - cluster-api
   - e2e-networks
-  - kubeadm
+  - k0s
+  - k0smotron
 home: https://github.com/e2enetworks/cluster-api-provider-e2e
 sources:
   - https://github.com/e2enetworks/cluster-api-provider-e2e
