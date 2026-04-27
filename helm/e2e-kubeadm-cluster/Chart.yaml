@@ -2,8 +2,8 @@ apiVersion: v2
 name: e2e-k0s-cluster
 description: Cluster blueprint for E2E Networks k0s standalone clusters (k0smotron control plane)
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.2.1
+appVersion: "0.2.1"
 keywords:
   - cluster-api
   - e2e-networks
