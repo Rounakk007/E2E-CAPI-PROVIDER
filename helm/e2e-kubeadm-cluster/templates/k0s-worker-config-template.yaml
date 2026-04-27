@@ -6,4 +6,4 @@ metadata:
 spec:
   template:
     spec:
-      version: {{ .Values.k0s.version | quote }}
+      version: {{ include "k0s.resolvedVersion" . | trim | quote }}

@@ -20,6 +20,8 @@ spec:
   config:
     clusterName: my-e2e-cluster
     namespace: kcm-system
+    # Specify any vX.Y or vX.Y.Z — the chart auto-selects the latest k0s patch
+    # release for that minor version via k0sVersionMap in values.yaml.
     kubernetesVersion: v1.33.0
 
     # Labels applied to the Cluster — used by MultiClusterService selectors
@@ -27,7 +29,11 @@ spec:
       env: dev
       team: platform
 
-    cniName: cilium
+    # k0s built-in CNI: calico (default), kuberouter, custom
+    # Note: use k0s.network.provider — not cniName — to set the CNI
+    k0s:
+      network:
+        provider: calico
 
     controlPlane:
       count: 1

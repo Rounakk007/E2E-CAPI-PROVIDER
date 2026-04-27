@@ -11,7 +11,7 @@ spec:
   template:
     spec:
       clusterName: {{ .Values.clusterName }}
-      version: {{ .Values.kubernetesVersion | quote }}
+      version: {{ include "k8s.resolvedVersion" . | trim | quote }}
       bootstrap:
         configRef:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1

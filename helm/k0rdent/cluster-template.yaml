@@ -8,7 +8,7 @@ metadata:
   namespace: kcm-system
 spec:
   # Kubernetes version this template targets
-  k8sVersion: "1.33.0"
+  k8sVersion: "1.33.10"
   providers:
     - bootstrap-k0sproject-k0smotron
     - control-plane-k0sproject-k0smotron
