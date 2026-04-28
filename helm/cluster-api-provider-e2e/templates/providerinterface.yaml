@@ -1,0 +1,24 @@
+---
+# ProviderInterface tells k0rdent's admission webhook that this provider supports
+# E2ECluster infrastructure objects and Secret-based credentials.
+# Without this object the ClusterDeployment webhook rejects any ClusterDeployment
+# that references the infrastructure-e2e provider with "unsupported infrastructure provider".
+apiVersion: k0rdent.mirantis.com/v1beta1
+kind: ProviderInterface
+metadata:
+  name: {{ .Release.Name }}
+  namespace: kcm-system
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    helm.toolkit.fluxcd.io/name: {{ .Release.Name }}
+    helm.toolkit.fluxcd.io/namespace: kcm-system
+spec:
+  clusterGVKs:
+  - group: infrastructure.e2enetworks.com
+    kind: E2ECluster
+    version: v1beta1
+  clusterIdentities:
+  - group: ""
+    kind: Secret
+    version: v1
+  description: E2E Networks infrastructure provider for Cluster API

@@ -20,7 +20,7 @@ rules:
     verbs: ["update"]
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create"]
 ---
 # Aggregated role — automatically merged into CAPI's capi-aggregated-manager-role
 apiVersion: rbac.authorization.k8s.io/v1

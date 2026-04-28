@@ -1,0 +1,45 @@
+---
+# k0smotron's control-plane, bootstrap, and infrastructure controllers need to
+# list/watch/get/create/patch/delete E2E CRDs in order to provision standalone
+# k0s control plane nodes.  Without this RBAC the k0smotron control-plane
+# controller cannot watch E2EMachineTemplate and will never create Machine
+# objects, blocking cluster provisioning entirely.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k0smotron-e2e-infra-access
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    helm.toolkit.fluxcd.io/name: {{ .Release.Name }}
+    helm.toolkit.fluxcd.io/namespace: kcm-system
+rules:
+- apiGroups: ["infrastructure.e2enetworks.com"]
+  resources:
+  - e2emachinetemplates
+  - e2emachines
+  - e2eclusters
+  - e2eclustertemplates
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k0smotron-e2e-infra-access
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    helm.toolkit.fluxcd.io/name: {{ .Release.Name }}
+    helm.toolkit.fluxcd.io/namespace: kcm-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k0smotron-e2e-infra-access
+subjects:
+- kind: ServiceAccount
+  name: k0smotron-controller-manager-control-plane
+  namespace: kcm-system
+- kind: ServiceAccount
+  name: k0smotron-controller-manager-bootstrap
+  namespace: kcm-system
+- kind: ServiceAccount
+  name: k0smotron-controller-manager-infrastructure
+  namespace: kcm-system
