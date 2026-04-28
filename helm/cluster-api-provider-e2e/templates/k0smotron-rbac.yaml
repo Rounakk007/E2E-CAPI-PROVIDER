@@ -43,3 +43,6 @@ subjects:
 - kind: ServiceAccount
   name: k0smotron-controller-manager-infrastructure
   namespace: kcm-system
+- kind: ServiceAccount
+  name: kcm-controller-manager
+  namespace: kcm-system
