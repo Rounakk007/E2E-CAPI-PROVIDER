@@ -716,6 +716,9 @@ func (r *E2EMachineReconciler) patchNodeProviderID(ctx context.Context, cluster 
 // taint (prevents scheduling), then refresh its NodeReady heartbeat on every
 // call so the node-lifecycle controller doesn't mark it Unknown.
 func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, cluster *clusterv1.Cluster, nodeName, providerID string) error {
+	logger := log.FromContext(ctx)
+	logger.Info("ensureControlPlaneNode: called", "node", nodeName, "providerID", providerID)
+
 	kubeconfigSecret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Namespace: cluster.Namespace,
@@ -723,6 +726,7 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 	}, kubeconfigSecret); err != nil {
 		return fmt.Errorf("getting workload kubeconfig: %w", err)
 	}
+	logger.Info("ensureControlPlaneNode: got kubeconfig secret")
 
 	kubeconfigData, ok := kubeconfigSecret.Data["value"]
 	if !ok {
@@ -738,9 +742,11 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 	if err != nil {
 		return fmt.Errorf("creating workload client: %w", err)
 	}
+	logger.Info("ensureControlPlaneNode: created workload client")
 
 	node := &corev1.Node{}
 	err = workloadClient.Get(ctx, types.NamespacedName{Name: nodeName}, node)
+	logger.Info("ensureControlPlaneNode: Get result", "isNotFound", apierrors.IsNotFound(err), "err", err)
 	if apierrors.IsNotFound(err) {
 		// Create the virtual node
 		newNode := &corev1.Node{
@@ -764,6 +770,7 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 		if err := workloadClient.Create(ctx, newNode); err != nil {
 			return fmt.Errorf("creating virtual control plane node: %w", err)
 		}
+		logger.Info("ensureControlPlaneNode: created virtual node")
 		node = newNode
 	} else if err != nil {
 		return fmt.Errorf("getting virtual control plane node: %w", err)
@@ -790,8 +797,10 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 		},
 	}
 	if err := workloadClient.Status().Update(ctx, node); err != nil {
+		logger.Info("ensureControlPlaneNode: status update failed", "err", err)
 		return fmt.Errorf("refreshing virtual control plane node heartbeat: %w", err)
 	}
+	logger.Info("ensureControlPlaneNode: heartbeat refreshed successfully")
 
 	return nil
 }
