@@ -783,8 +783,9 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 		}
 	}
 
-	// Refresh the NodeReady heartbeat so the node-lifecycle controller keeps
-	// the node in Ready state. This must run on every reconcile (every 20s).
+	// Refresh the node conditions heartbeat so the node-lifecycle controller
+	// keeps the node Ready. CAPI checks NodeReady, MemoryPressure, DiskPressure,
+	// and PIDPressure to determine NodeHealthy — all must be present.
 	now := metav1.Now()
 	node.Status.Conditions = []corev1.NodeCondition{
 		{
@@ -794,6 +795,30 @@ func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, clust
 			LastTransitionTime: now,
 			Reason:             "KubeletReady",
 			Message:            "k0s controller-only node managed by cluster-api-provider-e2e",
+		},
+		{
+			Type:               corev1.NodeMemoryPressure,
+			Status:             corev1.ConditionFalse,
+			LastHeartbeatTime:  now,
+			LastTransitionTime: now,
+			Reason:             "KubeletHasSufficientMemory",
+			Message:            "k0s controller-only node",
+		},
+		{
+			Type:               corev1.NodeDiskPressure,
+			Status:             corev1.ConditionFalse,
+			LastHeartbeatTime:  now,
+			LastTransitionTime: now,
+			Reason:             "KubeletHasNoDiskPressure",
+			Message:            "k0s controller-only node",
+		},
+		{
+			Type:               corev1.NodePIDPressure,
+			Status:             corev1.ConditionFalse,
+			LastHeartbeatTime:  now,
+			LastTransitionTime: now,
+			Reason:             "KubeletHasSufficientPID",
+			Message:            "k0s controller-only node",
 		},
 	}
 	if err := workloadClient.Status().Update(ctx, node); err != nil {
