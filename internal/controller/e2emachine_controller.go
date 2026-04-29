@@ -27,6 +27,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
@@ -490,21 +491,10 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			hostname, _ := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, "hostname")
 			hostname = strings.TrimSpace(hostname)
 			if hostname != "" {
-				if util.IsControlPlaneMachine(machine) {
-					// CP: patch via SSH — try k0s kubeconfig path first, fall back to kubeadm.
-					// k0s: /var/lib/k0s/pki/admin.conf
-					// kubeadm: /etc/kubernetes/admin.conf
-					patchCmd := fmt.Sprintf(
-						`for f in /var/lib/k0s/pki/admin.conf /etc/kubernetes/admin.conf; do [ -f "$f" ] && kubectl --kubeconfig "$f" patch node %s -p '{"spec":{"providerID":"%s"}}' && break; done`,
-						hostname, providerID,
-					)
-					if output, err := sshClient.RunCommand(node.PublicIPAddress, sshPort, sshUser, patchCmd); err != nil {
-						logger.Error(err, "Failed to set providerID on CP node", "output", output)
-					} else {
-						logger.Info("Set providerID on CP node", "node", hostname, "providerID", providerID)
-					}
-				} else {
-					// Worker: patch via the workload cluster API using the kubeconfig secret
+				// Worker: patch providerID via the workload cluster API.
+				// For k0s controller-only CP, we maintain a virtual node instead
+				// (see ensureControlPlaneNode called after bootstrap completes).
+				if !util.IsControlPlaneMachine(machine) {
 					if err := r.patchNodeProviderID(ctx, cluster, hostname, providerID); err != nil {
 						logger.Error(err, "Failed to set providerID on worker node", "node", hostname)
 					} else {
@@ -528,6 +518,17 @@ func (r *E2EMachineReconciler) reconcileInstanceStatus(
 			"nodeID", nodeID,
 			"providerID", providerID,
 		)
+
+		// For k0s controller-only CP: maintain a virtual node in the workload
+		// cluster so CAPI can set Machine.Status.NodeRef and mark the Machine
+		// as Running. Requeue periodically to refresh the node heartbeat before
+		// the node-monitor-grace-period (default 40s) expires.
+		if util.IsControlPlaneMachine(machine) {
+			if err := r.ensureControlPlaneNode(ctx, cluster, e2eMachine.Name, providerID); err != nil {
+				logger.Error(err, "Failed to maintain control plane virtual node")
+			}
+			return ctrl.Result{RequeueAfter: 20 * time.Second}, nil
+		}
 
 		return ctrl.Result{}, nil
 	}
@@ -702,6 +703,94 @@ func (r *E2EMachineReconciler) patchNodeProviderID(ctx context.Context, cluster 
 	node.Spec.ProviderID = providerID
 	if err := workloadClient.Patch(ctx, node, client.MergeFrom(base)); err != nil {
 		return fmt.Errorf("patching providerID on node %s: %w", nodeName, err)
+	}
+
+	return nil
+}
+
+// ensureControlPlaneNode creates or refreshes a virtual Node in the workload
+// cluster for k0s controller-only control planes. Since the CP VM runs k0s in
+// controller mode (no --enable-worker) it never registers as a Kubernetes node,
+// so CAPI can't set Machine.Status.NodeRef via its normal node-discovery path.
+// We create a lightweight node with the correct providerID and a control-plane
+// taint (prevents scheduling), then refresh its NodeReady heartbeat on every
+// call so the node-lifecycle controller doesn't mark it Unknown.
+func (r *E2EMachineReconciler) ensureControlPlaneNode(ctx context.Context, cluster *clusterv1.Cluster, nodeName, providerID string) error {
+	kubeconfigSecret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: cluster.Namespace,
+		Name:      fmt.Sprintf("%s-kubeconfig", cluster.Name),
+	}, kubeconfigSecret); err != nil {
+		return fmt.Errorf("getting workload kubeconfig: %w", err)
+	}
+
+	kubeconfigData, ok := kubeconfigSecret.Data["value"]
+	if !ok {
+		return fmt.Errorf("workload kubeconfig missing 'value' key")
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+	if err != nil {
+		return fmt.Errorf("parsing workload kubeconfig: %w", err)
+	}
+
+	workloadClient, err := client.New(restConfig, client.Options{Scheme: r.Scheme})
+	if err != nil {
+		return fmt.Errorf("creating workload client: %w", err)
+	}
+
+	node := &corev1.Node{}
+	err = workloadClient.Get(ctx, types.NamespacedName{Name: nodeName}, node)
+	if apierrors.IsNotFound(err) {
+		// Create the virtual node
+		newNode := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: nodeName,
+				Labels: map[string]string{
+					"node-role.kubernetes.io/control-plane": "",
+					"kubernetes.io/hostname":                nodeName,
+				},
+			},
+			Spec: corev1.NodeSpec{
+				ProviderID: providerID,
+				Taints: []corev1.Taint{
+					{
+						Key:    "node-role.kubernetes.io/control-plane",
+						Effect: corev1.TaintEffectNoSchedule,
+					},
+				},
+			},
+		}
+		if err := workloadClient.Create(ctx, newNode); err != nil {
+			return fmt.Errorf("creating virtual control plane node: %w", err)
+		}
+		node = newNode
+	} else if err != nil {
+		return fmt.Errorf("getting virtual control plane node: %w", err)
+	} else if node.Spec.ProviderID == "" {
+		// Node exists but providerID not set yet — patch it
+		base := node.DeepCopy()
+		node.Spec.ProviderID = providerID
+		if err := workloadClient.Patch(ctx, node, client.MergeFrom(base)); err != nil {
+			return fmt.Errorf("patching providerID on virtual control plane node: %w", err)
+		}
+	}
+
+	// Refresh the NodeReady heartbeat so the node-lifecycle controller keeps
+	// the node in Ready state. This must run on every reconcile (every 20s).
+	now := metav1.Now()
+	node.Status.Conditions = []corev1.NodeCondition{
+		{
+			Type:               corev1.NodeReady,
+			Status:             corev1.ConditionTrue,
+			LastHeartbeatTime:  now,
+			LastTransitionTime: now,
+			Reason:             "KubeletReady",
+			Message:            "k0s controller-only node managed by cluster-api-provider-e2e",
+		},
+	}
+	if err := workloadClient.Status().Update(ctx, node); err != nil {
+		return fmt.Errorf("refreshing virtual control plane node heartbeat: %w", err)
 	}
 
 	return nil
